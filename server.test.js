@@ -497,13 +497,21 @@ test('gift catalog enables all gifts, migrates saved settings, and validates the
     ]);
     assert.deepEqual(defaultConfig.catalog.filter(item => item.enabled).map(item => item.key), defaultConfig.catalog.map(item => item.key));
 
+    const publicResponse = await fetch(`${baseUrl}/api/gifts/catalog`);
+    assert.equal(publicResponse.status, 200);
+    const publicConfig = await publicResponse.json();
+    assert.equal(publicConfig.rotationSeconds, 10);
+    assert.equal(publicConfig.catalog.find(item => item.key === 'rose').name, 'Rosa');
+    assert.equal(publicConfig.catalog.find(item => item.key === 'rose').emoji, '🌹');
+    assert.equal(publicConfig.catalog.find(item => item.key === 'rose').enabled, true);
+
     await fetch(`${baseUrl}/api/state/cluss.gifts`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         v: 1,
         rotationSeconds: 14,
-        catalog: [{ key: 'rose', name: 'Rose (Rosita)', value: 1, enabled: true, aliases: ['rose'] }]
+        catalog: [{ key: 'rose', name: 'Rose (Rosita)', value: 1, enabled: true, aliases: ['rose'], imageUrl: 'https://cdn.example.test/rose.png' }]
       })
     });
     const snapshotResponse = await fetch(`${baseUrl}/api/state.js`);
@@ -518,6 +526,8 @@ test('gift catalog enables all gifts, migrates saved settings, and validates the
     assert.equal(migrated.rotationSeconds, 14);
     assert.equal(migrated.catalog.find(item => item.key === 'tiktok-universe').value, 44999);
     assert.deepEqual(migrated.catalog.filter(item => item.enabled).map(item => item.key), migrated.catalog.map(item => item.key));
+    const migratedPublic = await (await fetch(`${baseUrl}/api/gifts/catalog`)).json();
+    assert.equal(migratedPublic.catalog.find(item => item.key === 'rose').imageUrl, 'https://cdn.example.test/rose.png');
 
     const invalid = await fetch(`${baseUrl}/api/admin/gifts-config`, {
       method: 'POST',
@@ -598,6 +608,7 @@ test('honor backend keeps the latest gift sender, avatar, and gift icon', async 
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.equal(persisted?.username, 'honor-fan');
+
   } finally {
     if (hadPreviousState) {
       await fetch(`${baseUrl}/api/state/cluss.honorLastGift`, {
@@ -829,79 +840,114 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   ]);
 });
 
-test('gift honor keeps the rose in place and shows the latest sender below it', () => {
+test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts local', async () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
-  const marker = "const box=document.createElement('section');box.id='honor'";
+  const marker = "const side=document.querySelector('.side');";
   const markerIndex = html.indexOf(marker);
   assert.notEqual(markerIndex, -1);
   const scriptStart = html.lastIndexOf('<script>', markerIndex);
   const scriptEnd = html.indexOf('</script>', markerIndex);
   const script = html.slice(scriptStart + '<script>'.length, scriptEnd);
   let honorMarkup = '';
-  const pd = {};
-  Object.defineProperty(pd, 'innerHTML', {
-    get: () => honorMarkup,
-    set: value => { honorMarkup = value; },
-  });
+  let clickHandler;
+  const count = { textContent: '' };
+  const counter = {
+    addEventListener(_type, handler) { clickHandler = handler; },
+    setAttribute() {},
+    title: ''
+  };
+  const view = { set innerHTML(value) { honorMarkup = value; } };
   const box = {
     setAttribute() {},
-    querySelector: () => pd,
-    set innerHTML(value) { honorMarkup = value; },
+    querySelector: () => view,
   };
   const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
-  const knownAvatars = new Map();
+  let fetchCalls = 0;
   const context = {
-    window: { addEventListener() {}, __known: knownAvatars },
+    window: { addEventListener() {}, dispatchEvent() {} },
+    CustomEvent: function CustomEvent() {},
     document: {
-      querySelector: () => side,
+      querySelector: selector => selector === '.side' ? side : selector === '#giftCounter' ? counter : selector === '#giftCount' ? count : null,
       createElement: () => box,
     },
     setInterval: () => 1,
     clearInterval() {},
+    fetch: () => {
+      fetchCalls++;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ catalog: [] }) });
+    },
     safe: callback => {
       try { return callback(); } catch { return undefined; }
     },
-    SRV: {
-      get: () => ({
-        rotationSeconds: 10,
-        catalog: [{ key: 'diamond', name: '💎 Diamante', value: 1000, enabled: true, aliases: ['diamond'] }]
-      })
-    },
-    T: [],
-    recentChatTeam: () => -1,
-    handleLiveEntry(event) {
-      if (event.profilePictureUrl) {
-        knownAvatars.set(event.username.toLowerCase(), { url: event.profilePictureUrl });
-      }
-    },
+    SRV: { get: () => ({ catalog: [{ key: 'rose', name: '🌹 Rosa', icon: '🌹', enabled: true, aliases: ['rose'] }, { key: 'diamond', name: '💎 Diamante', icon: '💎', enabled: false, aliases: ['diamond'] }] }) },
+    handleLiveEntry() {},
     reset() {},
+    console,
+    Date,
+    Map,
+    Set,
+    String,
+    Number,
+    Math,
+    JSON,
+    Promise,
+    URLSearchParams,
   };
   runInNewContext(script, context);
 
-  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
-  assert.match(honorMarkup, /class="honor-avatar-column"/);
-  assert.match(honorMarkup, /class="honor-gifts-column"/);
-  assert.doesNotMatch(honorMarkup, /class="honor-sender"/);
-  assert.match(honorMarkup, /Diamante/);
-  assert.doesNotMatch(honorMarkup, /@ana/);
-  assert.doesNotMatch(honorMarkup, /—/);
-  context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', giftName: 'Diamond', activityCount: 1 });
-  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
-  assert.match(honorMarkup, /class="honor-sender"/);
-  assert.match(honorMarkup, /class="honor-username">@ana/);
-  assert.ok(honorMarkup.indexOf('honor-rose') < honorMarkup.indexOf('honor-sender') && honorMarkup.indexOf('honor-sender') < honorMarkup.indexOf('honor-username'));
-  context.handleLiveEntry({
-    bot: false,
-    type: 'follow',
+  assert.match(honorMarkup, /🌹/);
+  assert.equal(context.window.HonorBoard.onGift({
+    type: 'gift',
+    eventId: 'gift-1',
     username: 'ana',
-    profilePictureUrl: 'https://example.test/ana.jpg'
+    giftName: 'Galaxy',
+    activityCount: 3,
+    profilePictureUrl: 'https://example.test/ana.jpg',
+    giftImageUrl: 'https://example.test/galaxy.png'
+  }), true);
+  assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /Galaxy/);
+  assert.match(honorMarkup, /×3/);
+  assert.match(honorMarkup, /carrera ×3/);
+  assert.match(honorMarkup, /https:\/\/example\.test\/ana\.jpg/);
+  assert.match(honorMarkup, /https:\/\/example\.test\/galaxy\.png/);
+  assert.match(honorMarkup, /🎖️ HONOR|🔥 FANÁTICO/);
+  assert.equal(context.window.HonorBoard.onGift({
+    type: 'gift', eventId: 'gift-1', username: 'ana', giftName: 'Galaxy', activityCount: 3
+  }), false);
+  assert.equal(context.window.HonorBoard.onGift({
+    type: 'gift', eventId: 'gift-disabled', username: 'ana', giftName: 'Diamond', activityCount: 1
+  }), false);
+  assert.equal(count.textContent, '1');
+  clickHandler();
+  assert.equal(count.textContent, '2');
+  assert.match(honorMarkup, /@prueba/);
+  context.window.HonorBoard.startRace('next-race');
+  assert.match(honorMarkup, /🌹/);
+  assert.equal(count.textContent, '2');
+  await Promise.resolve();
+  assert.equal(fetchCalls, 1, 'only catalog bootstrap fetches from the server; emulated gifts stay local');
+  assert.match(html, /id="giftCounter"/);
+  assert.match(html, /window\.HonorBoard/);
+});
+
+test('gift normalization preserves unique event ids and HTTPS gift images', () => {
+  const gift = normalizeTikTokEvent('gift', {
+    eventId: 'gift-event',
+    user: { uniqueId: 'fan1', avatarUrl: 'https://example.test/avatar.png' },
+    gift_name: 'Rose',
+    giftId: 123,
+    giftImageUrl: 'https://example.test/rose.png',
+    diamondCount: 1
   });
-  assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
-  context.reset();
-  assert.match(honorMarkup, /Habilitado/);
-  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
-  assert.doesNotMatch(honorMarkup, /@ana/);
-  assert.match(html, /class="av gift-icon honor-rose"/);
+  assert.equal(gift.eventId, 'gift-event');
+  assert.equal(gift.giftImageUrl, 'https://example.test/rose.png');
+  assert.equal(normalizeTikTokEvent('gift', {
+    eventId: 'gift-event',
+    user: { uniqueId: 'fan1' },
+    giftName: 'Rose',
+    giftImageUrl: 'http://example.test/insecure.png'
+  }).giftImageUrl || '', '');
 });
 
 test('team event totals reset on each race and cup cards omit audience', () => {
@@ -1236,12 +1282,14 @@ test('overlay displays package.json version and uses it in deployment signature'
   }
 });
 
-test('tap counter heart has no pulse animation while gift rotation remains configurable', () => {
+test('gift counter emulates a rose locally and HonorBoard receives live catalog settings', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /@keyframes\s+(?:gmHeart|hbp)\b/);
   assert.doesNotMatch(html, /\.hb(?:\.bump|\.full)?\s+\.hi\s*\{[^}]*animation/s);
-  assert.match(html, /rotationTimer=setInterval\(rotate,giftConfig\.rotationSeconds\*1000\)/);
+  assert.match(html, /counter\.addEventListener\('click',\(\)=>HB\.onGift/);
+  assert.match(html, /emulated:true/);
   assert.match(html, /gift-config-update/);
+  assert.match(html, /window\.HonorBoard\.setTurbo\(settings\)/);
 });
 
 test('honor panel height aligns with the bottom of the team tap counters', () => {
@@ -1274,108 +1322,19 @@ test('honor panel height aligns with the bottom of the team tap counters', () =>
 
 test('honor panel displays a pulsing rose', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
-  assert.match(html, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
-  assert.match(html, /#honor \.honor-rose\{[^}]*animation:honorRoseBeat/);
-  assert.match(html, /#honor \.sl\.gm \.honor-rose,#honor \.sl\.vac \.honor-rose/);
+  assert.match(html, /const rose=\{key:'rose'/);
+  assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*animation:honorRoseBeat/);
   assert.match(html, /@keyframes honorRoseBeat/);
-  assert.match(html, /#honor \.honor-rose\{animation:none!important\}/);
+  assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{#honor,#honor \*\{animation:none!important\}\}/);
 });
 
-test('honor rotates only enabled gifts at the configured interval', () => {
+test('HonorBoard keeps the rose on race start and rotates enabled gifts only while idle', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
-  const marker = "const box=document.createElement('section');box.id='honor'";
-  const markerIndex = html.indexOf(marker);
-  const scriptStart = html.lastIndexOf('<script>', markerIndex);
-  const scriptEnd = html.indexOf('</script>', markerIndex);
-  const script = html.slice(scriptStart + '<script>'.length, scriptEnd);
-  const eventListeners = {};
-  const intervals = [];
-  let honorMarkup = '';
-  const pd = {};
-  Object.defineProperty(pd, 'innerHTML', { set: value => { honorMarkup = value; } });
-  const box = {
-    setAttribute() {},
-    querySelector: () => pd,
-    set innerHTML(value) { honorMarkup = value; },
-  };
-  const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
-  const context = {
-    window: { addEventListener: (name, callback) => { eventListeners[name] = callback; } },
-    document: { querySelector: () => side, createElement: () => box },
-    setInterval: callback => { intervals.push(callback); return intervals.length; },
-    clearInterval() {},
-    safe: callback => {
-      try { return callback(); } catch { return undefined; }
-    },
-    SRV: { get: () => ({
-      rotationSeconds: 7,
-      catalog: [
-        { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
-        { key: 'heart', name: 'Corazón', value: 100, enabled: true, aliases: ['heart'] },
-        { key: 'diamond', name: 'Diamante', value: 1000, enabled: true, aliases: ['diamond'] },
-        { key: 'rocket', name: 'Cohete', value: 20000, enabled: true, aliases: ['rocket'] },
-        { key: 'star', name: 'Estrella', value: 2, enabled: false, aliases: ['star'] },
-      ]
-    }) },
-    T: [],
-    recentChatTeam: () => -1,
-    handleLiveEntry() {},
-    reset() {},
-  };
-  runInNewContext(script, context);
-
-  assert.equal(intervals.length, 2);
-  assert.match(honorMarkup, /Rosita/);
-  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
-  context.reset();
-  assert.match(honorMarkup, /Rosita/);
-  assert.doesNotMatch(honorMarkup, /@ana/);
-  context.handleLiveEntry({
-    type: 'gift',
-    username: 'ana',
-    giftName: 'Rose',
-    activityCount: 1,
-    profilePictureUrl: 'https://example.test/ana.jpg',
-  });
-  assert.match(honorMarkup, /@ana/);
-  assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
-  context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
-  assert.match(honorMarkup, /Corazón/);
-  assert.match(honorMarkup, /@luz/);
-  intervals[1]();
-  assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Cohete/);
-  intervals[1]();
-  assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Rosita/);
-  assert.match(honorMarkup, /1 🪙 ×1/);
-  intervals[1]();
-  assert.match(honorMarkup, /Diamante/);
-  intervals[1]();
-  assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Corazón/);
-  assert.match(honorMarkup, /100 🪙 ×2/);
-  context.handleLiveEntry({ type: 'gift', username: 'sol', giftName: 'Star', activityCount: 1 });
-  assert.match(honorMarkup, /Corazón/);
-
-  eventListeners['gift-config-update']({ detail: {
-    rotationSeconds: 7,
-    catalog: [
-      { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
-    ]
-  } });
-  assert.match(honorMarkup, /@sol/);
-  assert.match(honorMarkup, /Rosita/);
-  assert.match(honorMarkup, /1 🪙 ×1/);
-
-  eventListeners['gift-config-update']({ detail: {
-    rotationSeconds: 1,
-    catalog: [{ key: 'rose', name: 'Rosita', value: 1, enabled: false, aliases: ['rose'] }]
-  } });
-  assert.match(honorMarkup, /No hay regalos habilitados/);
-  assert.doesNotMatch(honorMarkup, /Rosita/);
+  assert.match(html, /function paintIdle\(gift\)\{[\s\S]*?catalog\.find\(item=>item\.key==='rose'\)/);
+  assert.match(html, /entry\.enabled===false\|\|\(gift&&gift\.enabled===false\)/);
+  assert.match(html, /giftName\|\|entry\.gift_name\|\|entry\.gift/);
+  assert.match(html, /rotationTimer=setInterval\(rotateIdle,rotationSeconds\*1000\)/);
 });
-
 test('TikTok events are normalized to the six allowed types without forwarding bot', () => {
   const entry = normalizeTikTokEvent('chat', {
     user: { uniqueId: 'fan1', profilePictureUrl: 'https://example.test/avatar.jpg' },
@@ -1612,6 +1571,7 @@ test('a late TikTok avatar travels through SSE and appears on the existing overl
     assert.ok(image, 'late avatar URL is attached to the already visible alert');
     assert.equal(image.src, 'https://example.test/avatar.jpg');
     assert.equal(image.style.opacity, '1', 'loaded avatar is revealed after decoding');
+
   } finally {
     controller.abort();
     if (reader) await reader.cancel().catch(() => {});

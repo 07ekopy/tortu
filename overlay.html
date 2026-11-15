@@ -581,8 +581,8 @@ body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;colo
 .pod .pr{position:absolute;background:#2b1708;color:#ffd566;font:800 8px/11px Inter,sans-serif;text-align:center;border:1px solid #ffd566;z-index:2}
 .hd .cn{letter-spacing:-.2px}
 .evs{display:flex;gap:2px;padding:3px 4px;background:linear-gradient(#7a4e2a,#5a3a1e);border:2px solid #3f2713;border-radius:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
-.gift-total{position:absolute;right:8px;bottom:calc(var(--sb,0px) + 8px);z-index:25;box-sizing:border-box;width:40px;height:28px;min-height:28px;padding:2px;border:2px solid #ffe14d;border-radius:7px;background:linear-gradient(145deg,#643600,#241408);color:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.8),0 0 6px rgba(255,209,59,.8);gap:0;justify-content:center}
-.gift-total span{font-size:7px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#ffe14d;text-shadow:0 1px 1px #000}
+.gift-total{position:absolute;right:8px;bottom:calc(var(--sb,0px) - 22px);z-index:25;box-sizing:border-box;width:54px;height:38px;min-height:38px;padding:2px;border:2px solid #ffe14d;border-radius:9px;background:linear-gradient(145deg,#643600,#241408);color:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.8),0 0 8px rgba(255,209,59,.8);gap:3px;justify-content:center;cursor:pointer}
+.gift-total span{font-size:15px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#ffe14d;text-shadow:0 1px 1px #000}
 .st{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:3px;line-height:1}
 .st b{font-weight:400}
 .st span{font:800 11px Inter,sans-serif;color:#fff;text-shadow:0 1px 1px #000;white-space:nowrap}
@@ -823,7 +823,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="foot"><span class="live connecting" id="connection" role="status" aria-live="polite">conectando</span><button class="sm" id="bTurboDn" type="button" aria-label="Bajar el límite de taps del turbo en 10" title="Turbo: 10 taps menos">➖</button><button class="sm" id="bTurboUp" type="button" aria-label="Subir el límite de taps del turbo en 10" title="Turbo: 10 taps más">➕</button><button class="sm" id="bRefresh" type="button" aria-label="Refrescar página" title="Refrescar página">🔄</button><button class="sm" id="bMonitor" type="button" aria-label="Abrir monitor por unidad de negocio" title="Monitor por unidad de negocio">📊</button><button class="sm" id="bBackend" type="button" aria-label="Abrir herramientas del backend" title="Herramientas del backend">⚙️</button></div>
 <!-- FRANJA DE ESTADISTICAS del live: solo eventos REALES (los bots y los toques manuales no cuentan). -->
 <div class="evs" id="evs" role="status" aria-label="Estadisticas del live"><div class="st" data-k="member" title="Unidos"><b>👥</b><span>0</span></div><div class="st" data-k="chat" title="Comentarios"><b>💬</b><span>0</span></div><div class="st" data-k="like" title="Me gusta"><b>❤️</b><span>0</span></div><div class="st" data-k="follow" title="Seguidores nuevos"><b>➕</b><span>0</span></div><div class="st" data-k="share" title="Compartidos"><b>↗️</b><span>0</span></div></div>
-<div class="gift-total st" data-k="gift" role="status" aria-label="Regalos recibidos en esta sesión" title="Cantidad de regalos recibidos en esta sesión"><span>0</span></div>
+<button id="giftCounter" class="gift-total st" data-k="gift" type="button" aria-label="Regalos mostrados en esta sesión: 0" title="Regalos mostrados en esta sesión: 0"><b aria-hidden="true">🌹</b><span id="giftCount">0</span></button>
 <div id="toast" role="status" aria-live="polite"></div>
 <!-- Monitor de unidades de negocio. Se mantiene el panel visual existente del overlay. -->
 <section id="stp" hidden role="dialog" aria-label="Monitor por unidad de negocio"><header><b>🐢 Monitor LIVE</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav aria-label="Unidades de negocio"><button data-tab="eventos" title="Eventos">⚡ Eventos</button><button data-tab="usuarios" title="Usuarios">👤 Usuarios</button><button data-tab="regalos" title="Regalos">🎁 Regalos</button><button data-tab="equipos" title="Equipos">🐢 Equipos</button><button data-tab="torneos" title="Torneos">🏆 Torneos</button><button data-tab="estadisticas" title="Estadísticas">📊 Estad.</button><button data-tab="motor" title="Motor tiempo real">⚙ Motor</button><button data-tab="turbo-equipos" title="Turbo contador equipos">⚡ Turbo eq.</button><button data-tab="turbo-regalos" title="Turbo regalos">🎁 Turbo reg.</button><button data-tab="voz" title="Voz en off">♫ Voz</button><button data-tab="honor" title="Cuadro de honor">🥇 Honor</button><button data-tab="narrador" title="Narrador">🎙 Narrador</button><button data-tab="acciones" title="CTAs y acciones">🛠 Acciones</button></nav><div class="stb"></div></section>
@@ -2320,7 +2320,7 @@ handleLiveEntry=function(e){
  try{if(e&&!e.bot&&TAP_POLICY.isInteractionEvent(e.type)){lastInteractionAt=Date.now();matchInteractionCount++} /* solo interacciones, no ingresos al LIVE */
   if(e&&!e.bot){
    const n=TAP_POLICY.eventCountDelta(e.type,e.activityCount);
-   if(n){ST[e.type]+=n;const el=document.querySelector('.st[data-k="'+e.type+'"]');
+   if(n){ST[e.type]+=n;const el=e.type==='gift'?null:document.querySelector('.st[data-k="'+e.type+'"]');
   if(el){el.querySelector('span').textContent=stFmt(ST[e.type]);el.classList.remove('up');void el.offsetWidth;el.classList.add('up')}
    }
  }}catch(x){console.error(x)}
@@ -3618,118 +3618,154 @@ setInterval(()=>{try{if(over||document.hidden)return;let best=null;pts.forEach((
 })();
 </script>
 
-<!-- ===== TOP 3 REGALOS: 3 avatares GRANDES uno bajo otro, panel destacado. Solo eventos REALES (e.bot nunca). No pide ni promete nada (regla 1). ===== -->
+<!-- ===== CUADRO DE HONOR: visualiza regalos reales; las pruebas locales nunca salen del navegador. ===== -->
 <style id="honor-css">
-#honor{width:100%;border:3px solid #ffe14d;border-radius:14px;background:linear-gradient(#3a2409,#150c03);box-shadow:0 0 14px 3px rgba(255,225,77,.55);text-align:center;font-family:Inter,sans-serif;color:#fff;animation:hnBrillo 2.4s ease-in-out infinite}
+#honor{width:100%;min-width:0;overflow:hidden;border:2px solid #ffe14d;border-radius:14px;padding:4px 3px;background:linear-gradient(#3a2409,#150c03);box-shadow:0 0 14px 3px rgba(255,225,77,.55);text-align:center;font-family:Inter,sans-serif;color:#fff;animation:hnBrillo 2.4s ease-in-out infinite}
 @keyframes hnBrillo{50%{box-shadow:0 0 22px 7px rgba(255,225,77,.85)}}
-#honor .hh{font:900 11px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
-#honor .honor-rose{display:flex;align-items:center;justify-content:center;transform-origin:50% 70%;animation:honorRoseBeat 1.1s ease-in-out infinite}
+#giftCounter{appearance:none;-webkit-appearance:none;display:flex;align-items:center;font:inherit;text-align:center;cursor:pointer}
+#giftCounter b{font-size:14px}
+#giftCounter span{color:#ffe14d;font:900 15px/1 Inter,sans-serif}
+#giftCounter:active{transform:scale(.94)}
+#giftCounter:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#honor .hh{margin-bottom:3px;color:#ffe14d;font:900 10px/1 Inter,sans-serif;text-shadow:0 1px 2px #000}
+#honor .hn-view{display:flex;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:2px;overflow:hidden}
+#honor .hn-aura{position:relative;width:38px;height:38px;display:grid;place-items:center}
+#honor .hn-aura:before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,transparent,#ffe14d,#ff7896,transparent);animation:hnSpin 3.4s linear infinite;-webkit-mask:radial-gradient(circle,transparent 52%,#000 54%);mask:radial-gradient(circle,transparent 52%,#000 54%)}
+@keyframes hnSpin{to{transform:rotate(360deg)}}
+#honor .hn-aura .hn-gicon{width:27px;height:27px;font-size:23px;transform-origin:50% 70%;animation:honorRoseBeat 1.1s ease-in-out infinite}
 @keyframes honorRoseBeat{0%,100%{transform:scale(1)}15%{transform:scale(1.2)}30%{transform:scale(1)}45%{transform:scale(1.3)}60%{transform:scale(1)}}
-#honor .pd{display:flex;flex-direction:column}
-#honor .sl{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;background:rgba(255,255,255,.08);min-width:0}
-#honor .sl.s1{background:rgba(255,225,77,.2)}
-#honor .av{flex:none;border-radius:50%;object-fit:cover;background:#3f2713;display:flex;align-items:center;justify-content:center;border:3px solid #c9ccd1}
-#honor .s1 .av{border-color:#ffe14d;box-shadow:0 0 10px 2px rgba(255,225,77,.75)}
-#honor .s3 .av{border-color:#d08a4a}
-#honor .sl.vac .av{opacity:.4}
-#honor .honor-avatar-column{display:flex;justify-content:center;align-items:center;min-width:0}
-#honor .honor-gifts-column{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;min-width:0;text-align:left}
-#honor .honor-gift-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 10px/1.1 Inter,sans-serif}
-#honor .ct{font:900 17px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
-#honor .sl.hit .av{animation:hnPop .6s ease-out}
-@keyframes hnPop{0%{transform:scale(.4)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
-#honor .av.gift-icon{font-size:27px!important;line-height:1;opacity:1!important}
-@media (prefers-reduced-motion:reduce){#honor,#honor .sl.hit .av,#honor .honor-rose{animation:none!important}}</style>
+#honor .hn-hit{display:flex;width:100%;min-width:0;flex-direction:column;align-items:center;gap:2px}
+#honor .hn-user{display:flex;max-width:100%;align-items:center;justify-content:center;gap:4px}
+#honor .hn-avatar{width:28px;height:28px;flex:none;overflow:hidden;border:2px solid #ffe14d;border-radius:50%;background:#3f2713;box-shadow:0 0 0 1px #fff;display:grid;place-items:center;font-size:15px}
+#honor .hn-avatar img{width:100%;height:100%;object-fit:cover}
+#honor .hn-user-meta{display:flex;min-width:0;flex-direction:column;align-items:flex-start;text-align:left}
+#honor .hn-un{max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 7px/1.1 Inter,sans-serif}
+#honor .hn-tier{font:900 6px/1.1 Inter,sans-serif;color:#ffe14d}
+#honor .hn-row{display:flex;max-width:100%;align-items:center;justify-content:center;gap:3px}
+#honor .hn-gicon{width:19px;height:19px;flex:none;display:grid;place-items:center;font-size:16px;line-height:1}
+#honor .hn-gicon img{width:100%;height:100%;object-fit:contain}
+#honor .hn-qty{color:#ffe14d;font:900 14px/1 Inter,sans-serif}
+#honor .hn-name{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff3c4;font:800 6px/1.1 Inter,sans-serif}
+#honor .hn-meta{display:flex;max-width:100%;justify-content:center;gap:3px;color:#ddd;font:700 6px/1.1 Inter,sans-serif}
+#honor .hn-turbo{color:#ff9f1a;font-weight:900}
+#honor .hn-burst{animation:hnPop .5s ease-out}
+@keyframes hnPop{0%{transform:scale(.45)}60%{transform:scale(1.2)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){#honor,#honor *{animation:none!important}}</style>
 <script>
 (function(){
-const side=document.querySelector('.side');if(!side)return;
-const box=document.createElement('section');box.id='honor';box.setAttribute('aria-label','Regalos habilitados y aportes del live');
-box.innerHTML='<div class="hh">🏅 HONOR</div><div class="pd" id="hnPd"></div>';
-const ref=side.querySelector('.bub')||side.firstChild;side.insertBefore(box,ref);
-const pd=box.querySelector('#hnPd');
-const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let C=new Map(),hit='',lastGiftSender=null; /* HONOR: rosa fija y último regalo real */
-const av=(url,icon)=>/^https:/.test(url||'')?`<img class="av" alt="" referrerpolicy="no-referrer" data-fallback="${esc(icon)}" src="${esc(url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'av gift-icon',textContent:this.dataset.fallback||'🎁'}))">`:`<div class="av gift-icon" aria-hidden="true">${esc(icon)}</div>`;
-const rose='<div class="av gift-icon honor-rose" aria-hidden="true">🌹</div>';
-const giftNameKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
-const giftKey=(name,id)=>{const key=giftNameKey(name);return['rose','rosa','rosita','tiktok-rose'].includes(key)?'rose':key||(id?'id-'+giftNameKey(id):'')};
-const defaultGiftConfig={rotationSeconds:10,catalog:[{key:'rose',name:'🌹 Rosa',value:1,enabled:true,aliases:['rose','rosa','rosita']}]};
-function normalizeGiftConfig(value){
- const catalog=Array.isArray(value&&value.catalog)?value.catalog:defaultGiftConfig.catalog;
- return{
-  rotationSeconds:Number.isInteger(Number(value&&value.rotationSeconds))?Math.max(1,Math.min(3600,Number(value.rotationSeconds))):10,
-  catalog:catalog.filter(item=>item&&typeof item.key==='string').map(item=>({...item,key:giftNameKey(item.key),enabled:item.enabled===true,aliases:Array.isArray(item.aliases)?item.aliases.map(giftNameKey):[]})).filter(item=>item.key)
- };
+'use strict';
+const side=document.querySelector('.side');
+if(!side)return;
+const box=document.createElement('section');
+box.id='honor';box.setAttribute('aria-label','Cuadro de honor');
+box.innerHTML='<div class="hh">🏅 HONOR</div><div class="hn-view" id="hnView" aria-live="polite"></div>';
+side.insertBefore(box,side.querySelector('.bub')||side.firstChild);
+const view=box.querySelector('#hnView'),count=document.querySelector('#giftCount'),counter=document.querySelector('#giftCounter');
+const esc=value=>String(value==null?'':value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const key=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
+const https=value=>/^https:\/\//i.test(String(value||''));
+const rose={key:'rose',name:'Rosa',value:1,enabled:true,aliases:['rose','rosa','rosita'],emoji:'🌹',imageUrl:''};
+let catalog=[rose],race={id:'',last:null,users:new Map()},seen=new Set(),total=0,turboUntil=0,giftTurboMs=15000,rotationSeconds=0,rotationTimer=0,idleKey='rose';
+const tiers=[{min:10,label:'👑 LEYENDA'},{min:3,label:'🔥 FANÁTICO'},{min:1,label:'🎖️ HONOR'}];
+function findGift(entry){
+ const name=key(entry.giftName||entry.gift_name||entry.gift),id=entry.giftId?'id-'+key(entry.giftId):'';
+ return catalog.find(gift=>gift.key===name||gift.aliases.includes(name)||(id&&gift.key===id))||null;
 }
-let giftConfig=normalizeGiftConfig(safe(()=>SRV.get('cluss.gifts',null))||defaultGiftConfig),rotationTimer;
-let cursor=0;
-const giftForEvent=e=>{
- const name=giftNameKey(e.giftName),key=giftKey(e.giftName,e.giftId);
- return giftConfig.catalog.find(item=>item.enabled&&(item.key===key||item.aliases.includes(name)));
-};
-function avatarFor(e,userKey){
- const received=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
- if(/^https:\/\//i.test(received))return received;
- const known=window.__known,entry=known&&typeof known.get==='function'?known.get(userKey):null;
- const cached=String(entry&&entry.url||'');
- return /^https:\/\//i.test(cached)?cached:'';
+function icon(gift,url,emoji){
+ const image=https(url)?url:'',fallback=esc(emoji||(gift&&gift.emoji)||'🎁');
+ return image?`<span class="hn-gicon"><img alt="" referrerpolicy="no-referrer" src="${esc(image)}" data-fallback="${fallback}" onerror="this.parentNode.textContent=this.dataset.fallback"></span>`:`<span class="hn-gicon" aria-hidden="true">${fallback}</span>`;
 }
-function currentEntries(){
- const enabled=giftConfig.catalog.filter(gift=>gift.enabled);
- const cheap=enabled.filter(gift=>Number(gift.value)<=100).sort((a,b)=>Number(a.value)-Number(b.value));
- const expensive=enabled.filter(gift=>Number(gift.value)>100).sort((a,b)=>Number(b.value)-Number(a.value));
- const ordered=[];
- for(let i=0;i<Math.max(cheap.length,expensive.length);i++){
-  if(expensive[i])ordered.push(expensive[i]);
-  if(cheap[i])ordered.push(cheap[i]);
- }
- return ordered;
+function avatar(url){
+ return https(url)?`<span class="hn-avatar"><img alt="" referrerpolicy="no-referrer" src="${esc(url)}" onerror="this.parentNode.textContent='👤'"></span>`:'<span class="hn-avatar" aria-hidden="true">👤</span>';
 }
-function roseIndex(items){const index=items.findIndex(gift=>gift.key==='rose');return index<0?0:index}
-function senderMarkup(){return lastGiftSender?`<div class="honor-sender"><div class="honor-sender-avatar">${av(lastGiftSender.url,'👤')}</div><span class="honor-username">@${esc(lastGiftSender.user)}</span></div>`:''}
-function pinta(gift){
- if(!gift){pd.innerHTML=`<div class="sl s1 vac"><div class="honor-avatar-column"><div class="avw">${rose}${senderMarkup()}</div></div><div class="honor-gifts-column"><span class="ct">No hay regalos habilitados</span></div></div>`;return}
- const contributor=[...C.values()].filter(item=>item.giftKey===gift.key).sort((a,b)=>b.n-a.n)[0]||null;
- const value=Number(gift.value)>0?Number(gift.value).toLocaleString('es')+' 🪙':'valor sin informar';
- const count=contributor?` ×${contributor.n}`:' · Habilitado';
- pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:#ffe14d"><div class="honor-avatar-column"><div class="avw">${rose}${senderMarkup()}</div></div><div class="honor-gifts-column"><span class="honor-gift-name">${esc(gift.name)}</span><span class="ct">${esc(value)}${count}</span></div></div>`}
-function refreshContributorAvatar(e){
- const user=String(e.username||'').trim(),key=user.toLowerCase();
- if(!user)return;
- const url=avatarFor(e,key);if(!url)return;
- let changed=false;
- if(lastGiftSender&&lastGiftSender.user.toLowerCase()===key&&lastGiftSender.url!==url){lastGiftSender.url=url;changed=true}
- C.forEach(item=>{if(item.user.toLowerCase()===key&&item.url!==url){item.url=url;changed=true}});
- if(changed){const items=currentEntries();pinta(items[cursor]||null)}
+function paintIdle(gift){
+ const roseGift=gift||catalog.find(item=>item.key==='rose')||rose;
+ view.innerHTML=`<div class="hn-aura">${icon(roseGift,roseGift.imageUrl,roseGift.emoji)}</div>`;
 }
-function rotate(){
- const items=currentEntries();if(!items.length){cursor=0;pinta(null);return}
- cursor=(cursor+1)%items.length;pinta(items[cursor]);
+function rotateIdle(){
+ const enabled=catalog.filter(gift=>gift.enabled);
+ if(race.last||enabled.length<2)return;
+ const index=enabled.findIndex(gift=>gift.key===idleKey),next=enabled[(index+1)%enabled.length];
+ idleKey=next.key;paintIdle(next);
 }
 function scheduleRotation(){
- clearInterval(rotationTimer);
- rotationTimer=setInterval(rotate,giftConfig.rotationSeconds*1000);
+ clearInterval(rotationTimer);rotationTimer=0;
+ if(rotationSeconds>0&&catalog.filter(gift=>gift.enabled).length>1)
+  rotationTimer=setInterval(rotateIdle,rotationSeconds*1000);
 }
-function setGiftConfig(value){
- giftConfig=normalizeGiftConfig(value);
- const items=currentEntries();cursor=roseIndex(items);pinta(items[cursor]||null);scheduleRotation();
+function paintHit(pop){
+ const item=race.last;
+ if(!item){paintIdle();return}
+ const tier=tiers.find(value=>item.total>=value.min);
+ const left=Math.max(0,Math.ceil((turboUntil-Date.now())/1000));
+ view.innerHTML=`<div class="hn-hit${pop?' hn-burst':''}"><div class="hn-user">${avatar(item.avatar)}<span class="hn-user-meta"><b class="hn-un">@${esc(item.user)}</b><span class="hn-tier">${tier?tier.label:''}</span></span></div><div class="hn-row">${icon(item.gift,item.giftImage,item.emoji)}<b class="hn-qty">×${item.n}</b><span class="hn-name">${esc(item.giftName)}</span></div><div class="hn-meta"><span>carrera ×${item.total}</span><span class="hn-turbo" ${left?'':'hidden'}>⚡ ${left}s</span></div></div>`;
 }
-function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
- const gift=giftForEvent(e);if(!gift)return;
- const url=avatarFor(e,u.toLowerCase());
- const key=u.toLowerCase()+'|'+gift.key,c=C.get(key)||{key,user:u,giftKey:gift.key,giftName:gift.name,n:0,url:'',t:-1};
- c.n+=n;if(url)c.url=url;c.giftName=gift.name;c.giftValue=gift.value;
- C.set(key,c);const items=currentEntries(),index=items.findIndex(item=>item.key===gift.key);
- if(index>=0){cursor=index;hit=key;pinta(gift);hit=''}}
-const _h=handleLiveEntry;
-handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.username){refreshContributorAvatar(e);if(e.type==='gift'){const user=String(e.username).trim();lastGiftSender={user,url:avatarFor(e,user.toLowerCase())};honra(e);pinta(currentEntries()[cursor]||null)}}}catch(x){}return r};
-const _r=reset;reset=function(){C.clear();lastGiftSender=null;const items=currentEntries();cursor=roseIndex(items);pinta(items[cursor]||null);return _r.apply(this,arguments)};
-window.addEventListener('gift-config-update',event=>setGiftConfig(event.detail));
-/* SALA DE HONOR: se vacia en CADA partido. Ademas del reset del juego, vigila el cambio de duelo y el cierre de la pantalla de ganador. */
-let hSig='',hWin=false;
-setInterval(()=>{try{const sg=T[0].n+'|'+T[1].n,w=!!document.querySelector('#win.show');
- if((hSig&&sg!==hSig)||(hWin&&!w)){C=new Map();lastGiftSender=null;const items=currentEntries();cursor=roseIndex(items);pinta(items[cursor]||null)}hSig=sg;hWin=w}catch(e){}},400);
-setGiftConfig(giftConfig);
+setInterval(()=>{if(!race.last)return;const turbo=view.querySelector('.hn-turbo');if(!turbo)return;
+ const left=Math.max(0,Math.ceil((turboUntil-Date.now())/1000));turbo.hidden=!left;turbo.textContent=`⚡ ${left}s`;
+},500);
+function updateCounter(){
+ if(!count||!counter)return;
+ count.textContent=String(total);counter.setAttribute('aria-label',`Regalos mostrados en esta sesión: ${total}`);
+ counter.title=`Regalos mostrados en esta sesión: ${total}`;
+}
+const HB=window.HonorBoard={
+ persist:false,
+ startRace(id){
+  race={id:String(id||Date.now()),last:null,users:new Map()};seen.clear();turboUntil=0;idleKey='rose';
+  paintIdle();scheduleRotation();window.dispatchEvent(new CustomEvent('honor:race-start',{detail:{raceId:race.id}}));
+ },
+ onGift(entry){
+  if(!entry||entry.type!=='gift'||entry.bot)return false;
+  const user=String(entry.username||'').trim();if(!user)return false;
+  if(entry.eventId){const id=String(entry.eventId);if(seen.has(id))return false;seen.add(id);if(seen.size>200)seen.delete(seen.values().next().value)}
+  const gift=findGift(entry);if(entry.enabled===false||(gift&&gift.enabled===false))return false;
+  clearInterval(rotationTimer);rotationTimer=0;
+  const n=Math.max(1,Math.floor(Number(entry.activityCount)||1)),userKey=user.toLowerCase();
+  const record=race.users.get(userKey)||{total:0};record.total+=n;race.users.set(userKey,record);
+  const name=String(entry.giftName||entry.gift_name||entry.gift||(gift&&gift.name)||'Regalo').slice(0,40);
+  race.last={user,avatar:entry.profilePictureUrl||entry.profilePicture||entry.avatarUrl||entry.avatar||entry.userImage||entry.imageUrl||'',gift,giftName:gift?gift.name:name,giftImage:https(entry.giftImageUrl)?entry.giftImageUrl:(gift&&gift.imageUrl)||'',emoji:gift&&gift.emoji||'🎁',n,total:record.total};
+  turboUntil=Math.max(Date.now(),turboUntil)+n*giftTurboMs;total++;updateCounter();paintHit(true);return true;
+ },
+ setCatalog(value){
+  const source=Array.isArray(value&&value.catalog)?value.catalog:Array.isArray(value)?value:[];
+  const normalized=source.filter(item=>item&&typeof item.key==='string').map(item=>{
+   const iconValue=item.icon||item.emoji||'',rawName=String(item.name||item.key),emoji=item.emoji||item.icon||'🎁';
+   return{...item,key:key(item.key),name:iconValue&&rawName.startsWith(iconValue)?rawName.slice(iconValue.length).trim():rawName,
+    enabled:item.enabled!==false,aliases:Array.isArray(item.aliases)?item.aliases.map(key):[],emoji,
+    imageUrl:https(item.imageUrl||item.avatarUrl)?(item.imageUrl||item.avatarUrl):''};
+  }).filter(item=>item.key);
+  if(!normalized.some(item=>item.key==='rose'))normalized.unshift(rose);
+  catalog=normalized;
+  const seconds=Number(value&&value.rotationSeconds);
+  rotationSeconds=Number.isFinite(seconds)&&seconds>=0?Math.min(3600,seconds):0;
+  if(!race.last){idleKey='rose';paintIdle();scheduleRotation()}
+ },
+ setTurbo(value){if(value&&Number(value.giftTurboMs)>0)giftTurboMs=Number(value.giftTurboMs)},
+ handleSse(type,data){
+  try{const value=JSON.parse(data);
+   if(type==='update'&&value.entry)return HB.onGift(value.entry);
+   if(type==='gift-config')HB.setCatalog(value);
+   if(type==='game-settings')HB.setTurbo(value);
+  }catch(error){console.error('No se pudo procesar un evento de Honor.',error)}
+  return false;
+ },
+ connect(){
+  const events=new EventSource('/api/events'),tools=new EventSource('/api/game-tools/events');
+  events.addEventListener('update',event=>HB.handleSse('update',event.data));
+  ['gift-config','game-settings'].forEach(type=>tools.addEventListener(type,event=>HB.handleSse(type,event.data)));
+  return{events,tools};
+ }
+};
+counter.addEventListener('click',()=>HB.onGift({type:'gift',username:'prueba',giftName:'Rose',giftId:'rose',activityCount:1,eventId:`emulated-${Date.now()}`,emulated:true}));
+const previousEntry=handleLiveEntry;
+handleLiveEntry=function(entry){const result=previousEntry.apply(this,arguments);if(entry&&!entry.bot&&entry.type==='gift')HB.onGift(entry);return result};
+const previousReset=reset;
+reset=function(){const result=previousReset.apply(this,arguments);HB.startRace(Date.now());return result};
+window.addEventListener('gift-config-update',event=>HB.setCatalog(event.detail));
+HB.setCatalog(safe(()=>SRV.get('cluss.gifts',null))||{catalog:[rose]});
+HB.startRace();
+fetch('/api/gifts/catalog',{cache:'no-store'}).then(response=>{if(!response.ok)throw new Error(`HTTP ${response.status}`);return response.json()})
+ .then(HB.setCatalog).catch(error=>console.error('No se pudo cargar el catálogo de regalos de Honor.',error));
 })();
 </script>
 
@@ -4418,6 +4454,7 @@ render();
    if(typeof window.setLiveTurboSettings==='function'){
     window.setLiveTurboSettings(settings.giftTurboProgress,settings.tapTurboProgress);
    }
+   if(window.HonorBoard)window.HonorBoard.setTurbo(settings);
   }catch(error){console.error('No se pudieron actualizar los ajustes del juego desde el servidor.',error)}
  });
  toolsSource.addEventListener('game-tools',event=>{

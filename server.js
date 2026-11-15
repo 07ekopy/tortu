@@ -44,6 +44,7 @@ const COUNTRIES = [
 ].map(([code, name, aliases]) => ({ code, name, aliases }));
 const DEFAULT_VS_CONFIG_VERSION = 5;
 const DEFAULT_GIFT_CONFIG_VERSION = 2;
+const DEFAULT_GIFT_TURBO_MS = 15000;
 const DEFAULT_GIFT_CATALOG = [
   { key: 'rose', name: '🌹 Rosa', value: 1, enabled: true, aliases: ['rose', 'rosa', 'rosita'] },
   { key: 'tiktok', name: '⚽ Pelota / TikTok', value: 1, enabled: false, aliases: ['tiktok', 'ball', 'football', 'soccer', 'soccer ball', 'pelota'] },
@@ -260,6 +261,9 @@ function giftConfigView(value) {
       key,
       name,
       icon: giftIcon(item.icon || name),
+      imageUrl: /^https:\/\//i.test(String(item.imageUrl || item.avatarUrl || ''))
+        ? String(item.imageUrl || item.avatarUrl).trim()
+        : '',
       value: Number.isFinite(itemValue) ? Math.min(1000000, Math.max(0, Math.floor(itemValue))) : 0,
       enabled: migrating || item.enabled === true,
       aliases: Array.isArray(item.aliases)
@@ -273,6 +277,7 @@ function giftConfigView(value) {
     return {
       ...item,
       enabled: previous ? previous.enabled : item.enabled,
+      imageUrl: previous?.imageUrl || item.imageUrl || '',
       aliases: [...new Set([...item.aliases.map(giftNameKey), ...(previous?.aliases || [])])]
     };
   });
@@ -284,6 +289,24 @@ function giftConfigView(value) {
     v: DEFAULT_GIFT_CONFIG_VERSION,
     rotationSeconds: Number.isInteger(rotation) ? Math.min(3600, Math.max(1, rotation)) : 10,
     catalog
+  };
+}
+
+function honorGiftConfig(value = giftCatalogConfig) {
+  return {
+    rotationSeconds: value.rotationSeconds,
+    catalog: value.catalog.map(item => {
+      const imageUrl = item.imageUrl || '';
+      return {
+        key: item.key,
+        name: item.name.startsWith(item.icon) ? item.name.slice(item.icon.length).trim() : item.name,
+        value: item.value,
+        enabled: item.enabled,
+        aliases: item.aliases,
+        emoji: item.icon,
+        ...(imageUrl ? { imageUrl } : {})
+      };
+    })
   };
 }
 
@@ -358,6 +381,35 @@ function eventAvatar(data) {
   return '';
 }
 
+function eventGiftImage(data) {
+  const candidates = [
+    data?.giftImageUrl, data?.gift_image_url, data?.giftDetails?.giftImageUrl,
+    data?.giftDetails?.imageUrl, data?.giftDetails?.image, data?.gift?.imageUrl, data?.gift?.image
+  ];
+  const findImageUrl = (value, depth = 0) => {
+    if (depth > 5) return '';
+    if (typeof value === 'string') return /^https:\/\//i.test(value.trim()) ? value.trim() : '';
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const url = findImageUrl(item, depth + 1);
+        if (url) return url;
+      }
+      return '';
+    }
+    if (!value || typeof value !== 'object') return '';
+    for (const key of ['url', 'uri', 'urlList', 'urls', 'imageUrl', 'giftImageUrl']) {
+      const url = findImageUrl(value[key], depth + 1);
+      if (url) return url;
+    }
+    return '';
+  };
+  for (const candidate of candidates) {
+    const url = findImageUrl(candidate);
+    if (url) return url;
+  }
+  return '';
+}
+
 function dedupeEvent(data, type) {
   const id = eventId(data);
   if (!id) return false;
@@ -365,7 +417,7 @@ function dedupeEvent(data, type) {
   for (const [key, seenAt] of seenEventIds) {
     if (now - seenAt > 10 * 60 * 1000) seenEventIds.delete(key);
   }
-  const key = `${type}:${id}:${type === 'gift' ? data.repeatCount ?? '' : ''}`;
+  const key = `${type}:${id}:${type === 'gift' ? data.repeatCount ?? data.giftDetails?.repeatCount ?? '' : ''}`;
   if (seenEventIds.has(key)) return true;
   seenEventIds.set(key, now);
   return false;
@@ -386,9 +438,12 @@ function normalizeTikTokEvent(type, data) {
   if (type === 'like') {
     entry.activityCount = Math.max(1, Math.floor(Number(data.activityCount ?? data.likeCount ?? data.count ?? 1) || 1));
   } else if (type === 'gift') {
-    entry.activityCount = Math.max(1, Math.floor(Number(data.activityCount ?? data.repeatCount ?? data.count ?? 1) || 1));
+    entry.activityCount = Math.max(1, Math.floor(Number(data.activityCount ?? data.repeatCount ?? data.giftDetails?.repeatCount ?? data.count ?? 1) || 1));
     entry.giftName = String(data.giftName || data.gift_name || data.giftDetails?.giftName || data.gift?.name || data.gift || data.giftId || '').slice(0, 120);
     entry.giftId = String(data.giftId ?? data.gift_id ?? data.giftDetails?.giftId ?? data.giftDetails?.gift_id ?? data.gift?.id ?? '').slice(0, 80);
+    entry.eventId = eventId(data);
+    const giftImageUrl = eventGiftImage(data);
+    if (giftImageUrl) entry.giftImageUrl = giftImageUrl;
     const diamonds = Number(data.diamondCount ?? data.diamond_count ?? data.giftDetails?.diamondCount ?? data.giftDetails?.diamond_count ?? data.gift?.diamondCount ?? data.gift?.diamond_count ?? 0);
     entry.giftValue = Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0;
     entry.giftDiamonds = entry.giftValue;
@@ -400,7 +455,7 @@ function normalizeTikTokEvent(type, data) {
 
 function comboDelta(data) {
   const giftType = Number(data.giftType ?? data.giftDetails?.giftType ?? 0);
-  const repeatCount = Math.max(1, Math.floor(Number(data.repeatCount ?? 1) || 1));
+  const repeatCount = Math.max(1, Math.floor(Number(data.repeatCount ?? data.giftDetails?.repeatCount ?? 1) || 1));
   if (giftType !== 1) return repeatCount;
   const user = eventUsername(data);
   const giftId = String(data.giftId || data.giftDetails?.giftId || 'unknown');
@@ -724,7 +779,7 @@ function rememberGiftCatalogEntry(entry) {
       aliases: [giftNameKey(entry.giftName)].filter(Boolean)
     });
     await setState('cluss.gifts', giftCatalogConfig);
-    broadcastTool('gift-config', giftCatalogConfig);
+    broadcastTool('gift-config', honorGiftConfig());
   });
   return giftCatalogUpdateQueue;
 }
@@ -887,12 +942,16 @@ function handleTikTokEvent(type, raw) {
     type = socialEventType(raw);
     if (!type) return;
   }
-  if (!EVENT_TYPES.has(type) || dedupeEvent(raw, type)) return;
+  if (!EVENT_TYPES.has(type) || (type === 'gift' && (raw?.bot || raw?.emulated)) || dedupeEvent(raw, type)) return;
   const entry = normalizeTikTokEvent(type, raw);
   if (!entry) return;
   if (type === 'gift') {
     entry.activityCount = comboDelta(raw);
     if (entry.activityCount < 1) return;
+    const sourceId = eventId(raw), repeatCount = raw.repeatCount ?? raw.giftDetails?.repeatCount ?? 1;
+    entry.eventId = sourceId
+      ? `${sourceId}${Number(raw.giftType ?? raw.giftDetails?.giftType) === 1 ? `:${repeatCount}` : ''}`
+      : randomUUID();
     entry.giftDiamonds *= entry.activityCount;
     void rememberGiftCatalogEntry(entry).catch(error => recordTechnicalLog('error', `No se pudo actualizar el catálogo de regalos: ${error.message}`));
     settings.giftCount += entry.activityCount;
@@ -1165,8 +1224,8 @@ function renderGiftConfig(config){
  config.catalog.forEach(gift=>{
   const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');
   label.className='checkrow';input.type='checkbox';input.dataset.giftKey=gift.key;input.checked=gift.enabled;
-  const giftName=gift.name.startsWith(gift.icon)?gift.name.slice(gift.icon.length).trim():gift.name;
-  name.textContent=gift.icon+' '+giftName+' · '+(gift.value?gift.value.toLocaleString('es')+' monedas':'valor sin informar');
+  const icon=gift.emoji||gift.icon||'🎁',giftName=gift.name.startsWith(icon)?gift.name.slice(icon.length).trim():gift.name;
+  name.textContent=icon+' '+giftName+' · '+(gift.value?gift.value.toLocaleString('es')+' monedas':'valor sin informar');
   label.append(input,name);list.append(label);
  });
  $('#giftRotation').value=config.rotationSeconds;
@@ -1608,9 +1667,9 @@ async function handle(req, res) {
     const config = await loadGiftConfig();
     const voiceConfig = await loadVoiceConfig();
     sse(req, res, toolClients, [
-      ['game-settings', { giftTurboProgress: settings.giftTurboProgress, tapTurboProgress: settings.tapTurboProgress }],
+      ['game-settings', { giftTurboProgress: settings.giftTurboProgress, tapTurboProgress: settings.tapTurboProgress, giftTurboMs: DEFAULT_GIFT_TURBO_MS }],
       ['game-tools', { timerStartedAt: settings.timerStartedAt, giftCount: settings.giftCount }],
-      ['gift-config', config],
+      ['gift-config', honorGiftConfig(config)],
       ['voice-config', voiceConfig]
     ]);
     return;
@@ -1821,7 +1880,7 @@ async function handle(req, res) {
     settings.giftTurboProgress = gift;
     settings.tapTurboProgress = tap;
     await persistSettings();
-    broadcastTool('game-settings', { giftTurboProgress: gift, tapTurboProgress: tap });
+    broadcastTool('game-settings', { giftTurboProgress: gift, tapTurboProgress: tap, giftTurboMs: DEFAULT_GIFT_TURBO_MS });
     safeJson(res, 200, { ok: true });
     return;
   }
@@ -1934,6 +1993,10 @@ async function handle(req, res) {
     safeJson(res, 200, await loadGiftConfig());
     return;
   }
+  if (path === '/api/gifts/catalog' && req.method === 'GET') {
+    safeJson(res, 200, honorGiftConfig(await loadGiftConfig()));
+    return;
+  }
   if (path === '/api/admin/gifts-config' && req.method === 'POST') {
     if (!requireAdmin(req, res)) return;
     const body = await readBody(req);
@@ -1955,7 +2018,7 @@ async function handle(req, res) {
       catalog: config.catalog.map(item => ({ ...item, enabled: enabled.has(item.key) }))
     };
     await setState('cluss.gifts', giftCatalogConfig);
-    broadcastTool('gift-config', giftCatalogConfig);
+    broadcastTool('gift-config', honorGiftConfig());
     safeJson(res, 200, { ok: true, config: giftCatalogConfig });
     return;
   }
