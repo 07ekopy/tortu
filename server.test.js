@@ -1048,7 +1048,11 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     filter();
     assert.equal(eventEmpty.hidden, false);
     assert.match(eventEmpty.textContent, /No hay eventos/);
-    assert.match(html, /<div class="unit-nav-group" role="group" aria-label="Usuarios y eventos"><button type="button" class="active" data-unit="usuarios">Usuarios<\/button><button type="button" class="unit-nav-child" data-unit="eventos">Eventos<\/button><\/div>/);
+    assert.match(html, /<button type="button" class="active" data-unit="usuarios">Usuarios<\/button><button type="button" data-unit="honor">Honor<\/button><button type="button" data-unit="eventos">Eventos<\/button>/);
+    const userPanelIndex = html.indexOf('<section class="panel business-panel" data-units="usuarios">');
+    const honorPanelIndex = html.indexOf('<section class="panel business-panel" data-units="honor">');
+    const eventsPanelIndex = html.indexOf('<section class="panel business-panel" data-units="eventos">');
+    assert.ok(userPanelIndex < honorPanelIndex && honorPanelIndex < eventsPanelIndex);
     const userPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
     assert.ok(userPanel);
     assert.match(userPanel, /id="currentUsername"/);
@@ -1059,6 +1063,9 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     assert.match(userPanel, /Usuarios guardados/);
     assert.match(script, /fetch\('\/api\/admin\/usernames'/);
     assert.match(script, /renderSavedUsernames\(j\.usernames,j\.username\)/);
+    assert.match(script, /if\(selected\)usernameInput\.value=selected/);
+    assert.match(script, /savedUsernameSelect\.addEventListener\('change',fillUsernameFromSaved\)/);
+    assert.match(script, /savedUsernameSelect\.addEventListener\('input',fillUsernameFromSaved\)/);
     for (const unit of ['eventos', 'usuarios', 'regalos', 'torneos', 'estadisticas', 'motor', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
       assert.match(html, new RegExp(`data-unit="${unit}"`));
     }
@@ -1233,6 +1240,42 @@ test('tap counter heart has no pulse animation while gift rotation remains confi
   assert.match(html, /gift-config-update/);
 });
 
+test('honor panel height aligns with the bottom of the team tap counters', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  assert.match(html, /#honor\{flex:0 0 var\(--honor-panel-height,auto\)!important;height:var\(--honor-panel-height,auto\)!important/);
+  const script = html.match(/<script id="honor-height-to-taps-js">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  const styles = new Map();
+  const counters = [
+    { getBoundingClientRect: () => ({ bottom: 170 }) },
+    { getBoundingClientRect: () => ({ bottom: 180 }) },
+  ];
+  const honor = {
+    style: {
+      getPropertyValue: key => styles.get(key) || '',
+      setProperty: (key, value) => styles.set(key, value),
+    },
+    getBoundingClientRect: () => ({ top: 100 }),
+  };
+  runInNewContext(script, {
+    document: {
+      getElementById: id => id === 'honor' ? honor : { offsetWidth: 416, getBoundingClientRect: () => ({ width: 208 }) },
+      querySelectorAll: selector => selector === '.lane .hb' ? counters : [],
+    },
+    window: { addEventListener() {} },
+    requestAnimationFrame: callback => callback(),
+  });
+  assert.equal(styles.get('--honor-panel-height'), '160px');
+});
+
+test('honor panel displays a pulsing rose', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  assert.match(html, /class="honor-rose" aria-hidden="true">🌹/);
+  assert.match(html, /#honor \.honor-rose\{[^}]*animation:honorRoseBeat/);
+  assert.match(html, /@keyframes honorRoseBeat/);
+  assert.match(html, /#honor \.honor-rose\{animation:none!important\}/);
+});
+
 test('honor rotates only enabled gifts at the configured interval', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const marker = "const box=document.createElement('section');box.id='honor'";
@@ -1277,19 +1320,34 @@ test('honor rotates only enabled gifts at the configured interval', () => {
   runInNewContext(script, context);
 
   assert.equal(intervals.length, 2);
-  assert.match(honorMarkup, /Cohete/);
-  assert.match(honorMarkup, /20\.000/);
-  context.handleLiveEntry({ type: 'gift', username: 'ana', giftName: 'Rose', activityCount: 1 });
+  assert.match(honorMarkup, /Rosita/);
+  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">🌹/);
+  context.reset();
+  assert.match(honorMarkup, /Rosita/);
+  assert.doesNotMatch(honorMarkup, /@ana/);
+  context.handleLiveEntry({
+    type: 'gift',
+    username: 'ana',
+    giftName: 'Rose',
+    activityCount: 1,
+    profilePictureUrl: 'https://example.test/ana.jpg',
+  });
+  assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
   context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
+  assert.match(honorMarkup, /Corazón/);
+  assert.match(honorMarkup, /@luz/);
+  intervals[1]();
+  assert.doesNotMatch(honorMarkup, /@luz/);
   assert.match(honorMarkup, /Cohete/);
   intervals[1]();
-  assert.doesNotMatch(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /@ana/);
   assert.match(honorMarkup, /Rosita/);
   assert.match(honorMarkup, /1 🪙 ×1/);
   intervals[1]();
   assert.match(honorMarkup, /Diamante/);
   intervals[1]();
-  assert.doesNotMatch(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /@luz/);
   assert.match(honorMarkup, /Corazón/);
   assert.match(honorMarkup, /100 🪙 ×2/);
   context.handleLiveEntry({ type: 'gift', username: 'sol', giftName: 'Star', activityCount: 1 });
@@ -1301,7 +1359,7 @@ test('honor rotates only enabled gifts at the configured interval', () => {
       { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
     ]
   } });
-  assert.doesNotMatch(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /@ana/);
   assert.match(honorMarkup, /Rosita/);
   assert.match(honorMarkup, /1 🪙 ×1/);
 
