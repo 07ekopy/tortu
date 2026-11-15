@@ -42,7 +42,7 @@ const COUNTRIES = [
   ['NL', 'Países Bajos', ['paises bajos', 'países bajos', 'holanda', '🇳🇱', 'nl']],
   ['JP', 'Japón', ['japon', 'japón', '🇯🇵', 'jp']]
 ].map(([code, name, aliases]) => ({ code, name, aliases }));
-const DEFAULT_VS_CONFIG_VERSION = 4;
+const DEFAULT_VS_CONFIG_VERSION = 5;
 const DEFAULT_GIFT_CONFIG_VERSION = 2;
 const DEFAULT_GIFT_CATALOG = [
   { key: 'rose', name: '🌹 Rosa', value: 1, enabled: true, aliases: ['rose', 'rosa', 'rosita'] },
@@ -96,6 +96,30 @@ const DEFAULT_VS = [
   { k: 'ct-de|ct-nl', label: 'ALEMANIA vs PAÍSES BAJOS', on: false },
   { k: 'ct-de|ct-it', label: 'ALEMANIA vs ITALIA', on: false }
 ];
+const TEAM_NAMES = {
+  ol: 'Olimpia', cp: 'Cerro Porteño', 'ucl-bc': 'Barcelona', 'ucl-rm': 'Real Madrid',
+  'lib-boc': 'Boca Juniors', 'lib-riv': 'River Plate', 'cl-cel': 'Celtic', 'cl-ran': 'Rangers',
+  'cl-int': 'Inter de Milán', 'ucl-milan': 'Milan', 'cl-mu': 'Manchester United', 'ucl-lv': 'Liverpool',
+  'cl-nau': 'Nacional (Uruguay)', 'lib-pen': 'Peñarol', 'cl-fen': 'Fenerbahçe', 'cl-gal': 'Galatasaray',
+  'cl-ahl': 'Al Ahly', 'cl-zam': 'Zamalek', 'cl-ame': 'América', 'cl-chi': 'Chivas',
+  'cl-flu': 'Fluminense', 'lib-fla': 'Flamengo', 'cl-gre': 'Grêmio', 'cl-sci': 'Internacional',
+  'cl-aja': 'Ajax', 'cl-fey': 'Feyenoord', 'cl-crv': 'Estrella Roja', 'cl-par': 'Partizán',
+  'ct-ar': 'Argentina', 'ct-br': 'Brasil', 'ct-uy': 'Uruguay', 'ct-en': 'Inglaterra',
+  'ct-sc': 'Escocia', 'ct-de': 'Alemania', 'ct-nl': 'Países Bajos', 'ct-it': 'Italia'
+};
+const TEAM_FLAGS = {
+  ol: '⚪⚫', cp: '🔵🔴', 'ucl-bc': '🔵🔴', 'ucl-rm': '⚪',
+  'lib-boc': '🔵🟡', 'lib-riv': '⚪🔴', 'cl-cel': '🟢⚪', 'cl-ran': '🔵',
+  'cl-int': '🔵⚫', 'ucl-milan': '🔴⚫', 'cl-mu': '🔴', 'ucl-lv': '🔴',
+  'cl-nau': '⚪🔵', 'lib-pen': '🟡⚫', 'cl-fen': '🟡🔵', 'cl-gal': '🔴🟡',
+  'cl-ahl': '🔴', 'cl-zam': '⚪', 'cl-ame': '🟡🔵', 'cl-chi': '🔴⚪',
+  'cl-flu': '🟢🔴', 'lib-fla': '🔴⚫', 'cl-gre': '🔵⚫', 'cl-sci': '🔴',
+  'cl-aja': '⚪🔴', 'cl-fey': '🔴⚪', 'cl-crv': '🔴⚪', 'cl-par': '⚫⚪',
+  'ct-ar': '🇦🇷', 'ct-br': '🇧🇷', 'ct-uy': '🇺🇾', 'ct-en': '🏴',
+  'ct-sc': '🏴', 'ct-de': '🇩🇪', 'ct-nl': '🇳🇱', 'ct-it': '🇮🇹'
+};
+const DEFAULT_TEAM_CATALOG = [...new Set(DEFAULT_VS.flatMap(item => item.k.split('|')))]
+  .map(id => ({ id, name: TEAM_NAMES[id] || id.toUpperCase(), flag: TEAM_FLAGS[id] || '🏳️' }));
 const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|voice|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
 
 const clients = new Set();
@@ -144,21 +168,33 @@ function configuredUsername(savedUsername = settings.username) {
 
 function vsConfigView(value) {
   const current = value?.v === DEFAULT_VS_CONFIG_VERSION && Array.isArray(value.list);
-  const legacy = value?.v === 3 && Array.isArray(value.list);
+  const legacy = [3, 4].includes(value?.v) && Array.isArray(value.list);
   const compatible = current || legacy;
   const storedList = compatible ? value.list.filter(item => item && typeof item.k === 'string') : [];
   const enabled = new Map(storedList.map(item => [item.k, item.on !== false]));
   const popular = new Map(storedList.map(item => [item.k, item.popular === true]));
+  const list = DEFAULT_VS.map(item => ({
+    k: item.k,
+    label: item.label,
+    on: compatible ? (enabled.has(item.k) ? enabled.get(item.k) : item.on) : item.on,
+    popular: current ? (popular.has(item.k) ? popular.get(item.k) : item.popular === true) : item.popular === true
+  }));
+  const raceList = current && Array.isArray(value.raceList)
+    ? value.raceList.filter(item => item && list.some(duel => duel.k === item.k && duel.on))
+      .map(item => ({ k: item.k, played: item.played === true }))
+    : [];
+  if (!raceList.length) {
+    const popularRaces = list.filter(item => item.on && item.popular);
+    const next = list.find(item => item.on && !item.popular);
+    raceList.push(...popularRaces.map(item => ({ k: item.k, played: false })));
+    if (next) raceList.push({ k: next.k, played: false });
+  }
   return {
     v: DEFAULT_VS_CONFIG_VERSION,
     cur: compatible && typeof value.cur === 'string' ? value.cur : DEFAULT_VS[0].k,
-    np: current && typeof value.np === 'string' ? value.np : '',
-    list: DEFAULT_VS.map(item => ({
-      k: item.k,
-      label: item.label,
-      on: compatible ? (enabled.has(item.k) ? enabled.get(item.k) : item.on) : item.on,
-      popular: current ? (popular.has(item.k) ? popular.get(item.k) : item.popular === true) : item.popular === true
-    })),
+    np: (current || value?.v === 4) && typeof value.np === 'string' ? value.np : '',
+    raceList,
+    list,
     st: value?.st && typeof value.st === 'object' && !Array.isArray(value.st) ? value.st : {}
   };
 }
@@ -1002,7 +1038,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
 .voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
-.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.vs-config-list,.gift-catalog-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow,.gift-catalog-list .checkrow{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.vs-config-list .vs-checkrow{justify-content:space-between;gap:8px}.vs-checkrow label{display:flex;align-items:center;gap:5px;white-space:nowrap}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.vs-config-list,.gift-catalog-list,.race-list,.team-catalog-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow,.gift-catalog-list .checkrow,.race-row,.team-row{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.vs-config-list .vs-checkrow{justify-content:space-between;gap:8px}.vs-checkrow label{display:flex;align-items:center;gap:5px;white-space:nowrap}.race-row,.team-row{display:flex;align-items:center;gap:9px}.race-row input{accent-color:var(--lime)}.team-flag{min-width:42px;text-align:center;font-size:18px}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
 .event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
@@ -1018,11 +1054,12 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><div class="event-layout"><div><div class="event-toolbar"><button type="button" id="copyEvents">Copiar eventos visibles</button></div><p class="message" id="eventMessage" role="status"></p><p class="unit-empty" id="eventEmpty">Esperando eventos de TikTok…</p><ol class="event-list" id="eventList" aria-live="polite"></ol></div><aside class="event-filters" aria-label="Filtrar eventos"><h3>Mostrar eventos</h3><form id="eventFilterForm"><label class="event-filter"><input type="checkbox" data-event-filter="all" checked> Todos</label><label class="event-filter"><input type="checkbox" data-event-filter="member" checked> Se unieron</label><label class="event-filter"><input type="checkbox" data-event-filter="chat" checked> Comentarios</label><label class="event-filter"><input type="checkbox" data-event-filter="like" checked> Me gusta / taps</label><label class="event-filter"><input type="checkbox" data-event-filter="follow" checked> Seguidores</label><label class="event-filter"><input type="checkbox" data-event-filter="share" checked> Compartidos</label><label class="event-filter"><input type="checkbox" data-event-filter="gift" checked> Regalos</label></form></aside></div><pre class="pre" id="tools" hidden></pre></section>
 <section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
 <section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
-<section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Negocio de regalos</h2><span class="pill">CATÁLOGO Y ROTACIÓN</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><div class="form-row"><label class="field">Avance total del turbo por regalos (%)<input id="gift" type="number" min="0" max="100" value="6"></label><button class="primary" id="saveGiftTurbo">Guardar turbo de regalos</button></div><h3>Catálogo de regalos · monedas</h3><p class="subtle">Rosita empieza habilitada. El catálogo incluye los regalos y valores en monedas indicados; los regalos no catalogados aparecen con valor sin informar y deshabilitados.</p><div class="form-row"><label class="field">Rotar en el cuadro de honor cada (segundos)<input id="giftRotation" type="number" min="1" max="3600" value="10"></label></div><div id="giftCatalogList" class="gift-catalog-list"><div class="unit-empty">Cargando catálogo…</div></div><div class="toolbar"><button class="primary" id="saveGiftCatalog">Guardar catálogo y rotación</button></div><p class="message" id="giftConfigMessage" role="status"></p></section>
-<section class="panel business-panel" data-units="equipos turbo-equipos"><header><h2><span class="icon">🐢</span> Equipos y turbo del contador</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
+<section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Negocio de regalos</h2><span class="pill">CATÁLOGO Y ROTACIÓN</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><p class="subtle">Turbo por unidad: 10 m de base + 5 m por cada diamante. Se recorre durante 15 segundos; un regalo de 1 diamante avanza 15 m.</p><input id="gift" type="hidden" value="6"><h3>Catálogo de regalos · monedas</h3><p class="subtle">Rosita empieza habilitada. El catálogo incluye los regalos y valores en monedas indicados; los regalos no catalogados aparecen con valor sin informar y deshabilitados.</p><div class="form-row"><label class="field">Rotar en el cuadro de honor cada (segundos)<input id="giftRotation" type="number" min="1" max="3600" value="10"></label></div><div id="giftCatalogList" class="gift-catalog-list"><div class="unit-empty">Cargando catálogo…</div></div><div class="toolbar"><button class="primary" id="saveGiftCatalog">Guardar catálogo y rotación</button></div><p class="message" id="giftConfigMessage" role="status"></p></section>
+<section class="panel business-panel" data-units="equipos"><header><h2><span class="icon">🚩</span> Catálogo de banderas</h2><span class="pill">EQUIPOS</span></header><p class="subtle">Banderas de los equipos disponibles en los VS configurables.</p><div id="teamCatalogList" class="team-catalog-list"><div class="unit-empty">Cargando banderas…</div></div></section>
+<section class="panel business-panel" data-units="turbo-equipos"><header><h2><span class="icon">🐢</span> Turbo del contador de equipos</h2><span class="pill">MOTOR</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar turbo de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
 <section class="panel business-panel" data-units="motor"><header><h2><span class="icon">⚙</span> Motor en tiempo real</h2><span class="pill" id="motorStatus">SIN TELEMETRÍA</span></header><p class="subtle">Valores actuales reportados por el overlay y retransmitidos por el servidor.</p><div class="stats"><article class="stat"><span class="stat-label">Fase</span><strong id="motorPhase">—</strong><small id="motorUpdated">Esperando al overlay</small></article><article class="stat"><span class="stat-label">Duración</span><strong id="motorElapsed">—</strong><small>Tiempo de carrera</small></article><article class="stat"><span class="stat-label">Inactividad</span><strong id="motorIdle">—</strong><small>Cuenta regresiva</small></article></div><p class="subtle">Ganador: <b id="motorWinner">—</b> · Eventos procesados: <b id="motorEvents">0</b></p><div class="motor-grid" id="motorTeams"><div class="unit-empty">El overlay debe estar abierto para publicar telemetría.</div></div><pre class="pre" id="motorStats">Estadísticas del motor: esperando datos…</pre></section>
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
-<section class="panel business-panel" data-units="equipos torneos"><header><h2><span class="icon">🏆</span> Equipos · rotación de VS</h2><span class="pill">POPULAR Y NO POPULAR</span></header><p class="subtle">Olimpia–Cerro y Barcelona–Real Madrid empiezan habilitados y populares. Se repiten todos los VS habilitados como populares y, al final, uno no popular. Al terminar la lista se cargan otra vez los populares con el siguiente no popular. Cada cambio espera a que la inactividad llegue a cero.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS y popularidad</button></div><p class="message" id="vsConfigMessage" role="status"></p></section>
+<section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos · crear lista de carreras</h2><span class="pill">POPULAR Y NO POPULAR</span></header><p class="subtle">Olimpia–Cerro y Barcelona–Real Madrid empiezan habilitados y populares. Se repiten los VS populares y al final se agrega un no popular habilitado. Al completar toda la lista, se carga la siguiente tanda con el próximo no popular. Cada casilla se marca al terminar la carrera por inactividad.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS y popularidad</button></div><h3>Lista de carreras</h3><div id="raceList" class="race-list"><div class="unit-empty">Cargando lista…</div></div><p class="message" id="vsConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
 <section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><div class="form-row"><label class="field">No repetir una frase durante (minutos)<input id="voiceCooldownMinutes" type="number" min="1" max="1440" step="1" value="1"></label><button class="primary" id="saveVoiceConfig">Guardar tiempo</button></div><p class="voice-hint" id="voicePhraseRule">Las frases pronunciadas se comparan con el diccionario temporal antes de hablar.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
 <section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
@@ -1052,24 +1089,51 @@ async function loadGiftConfig(){
   renderGiftConfig(config);
  }catch(error){$('#giftCatalogList').textContent=error.message;status.textContent='No se pudo cargar el catálogo de regalos.'}
 }
-async function loadVsConfig(){
+async function loadVsConfig(raceListOnly=false){
  const list=$('#vsConfigList'),status=$('#vsConfigMessage');
- list.textContent='Cargando VS…';status.textContent='';
+ if(!raceListOnly){list.textContent='Cargando VS…';status.textContent=''}
  try{
   const response=await fetch('/api/admin/vs-config',{credentials:'same-origin',cache:'no-store'}),data=await response.json();
   if(!response.ok)throw Error(data.message||response.status);
-  list.replaceChildren();
-  data.list.forEach(duel=>{
-   const row=document.createElement('div'),enabledLabel=document.createElement('label'),popularLabel=document.createElement('label');
-   const enabled=document.createElement('input'),popular=document.createElement('input'),name=document.createElement('span');
-   row.className='checkrow vs-checkrow';
-   enabled.type='checkbox';enabled.dataset.vsKey=duel.k;enabled.checked=!!duel.on;
-   name.textContent=duel.label;enabledLabel.append(enabled,name);
-   popular.type='checkbox';popular.dataset.vsPopularKey=duel.k;popular.checked=!!duel.popular;
-   popularLabel.append(popular,document.createTextNode('Popular'));
-   row.append(enabledLabel,popularLabel);list.append(row);
+  if(!raceListOnly){
+   list.replaceChildren();
+   data.list.forEach(duel=>{
+    const row=document.createElement('div'),enabledLabel=document.createElement('label'),popularLabel=document.createElement('label');
+    const enabled=document.createElement('input'),popular=document.createElement('input'),name=document.createElement('span');
+    row.className='checkrow vs-checkrow';
+    enabled.type='checkbox';enabled.dataset.vsKey=duel.k;enabled.checked=!!duel.on;
+    name.textContent=duel.label;enabledLabel.append(enabled,name);
+    popular.type='checkbox';popular.dataset.vsPopularKey=duel.k;popular.checked=!!duel.popular;
+    popularLabel.append(popular,document.createTextNode('Popular'));
+    row.append(enabledLabel,popularLabel);list.append(row);
+   });
+  }
+  renderRaceList(data.raceList||[]);
+ }catch(error){if(!raceListOnly)list.textContent=error.message;status.textContent='No se pudo cargar la configuración de VS.'}
+}
+function renderRaceList(races){
+ const target=$('#raceList');target.replaceChildren();
+ if(!races.length){const empty=document.createElement('div');empty.className='unit-empty';empty.textContent='No hay carreras en la lista. Habilita al menos un VS.';target.append(empty);return}
+ races.forEach((race,index)=>{
+  const row=document.createElement('label'),check=document.createElement('input'),name=document.createElement('span');
+  row.className='race-row';check.type='checkbox';check.checked=!!race.played;check.disabled=true;
+  const duel=$('#vsConfigList').querySelector('[data-vs-key="'+race.k+'"]');
+  name.textContent=(index+1)+'. '+(duel?duel.closest('.vs-checkrow').querySelector('span').textContent:race.k);
+  row.append(check,name);target.append(row);
+ });
+}
+async function loadTeamCatalog(){
+ const target=$('#teamCatalogList');
+ try{
+  const response=await fetch('/api/admin/vs-config',{credentials:'same-origin',cache:'no-store'}),data=await response.json();
+  if(!response.ok)throw Error(data.message||response.status);
+  target.replaceChildren();
+  data.teams.forEach(team=>{
+   const row=document.createElement('div'),flag=document.createElement('span'),name=document.createElement('span');
+   row.className='team-row';flag.className='team-flag';flag.textContent=team.flag;name.textContent=team.name;
+   row.append(flag,name);target.append(row);
   });
- }catch(error){list.textContent=error.message;status.textContent='No se pudo cargar la configuración de VS.'}
+ }catch(error){target.textContent='No se pudo cargar el catálogo de banderas: '+error.message}
 }
 $('#logout').onclick=async()=>{await fetch('/api/admin/session',{method:'DELETE',credentials:'same-origin'});location.replace('/backend')};
 const unitButtons=[...document.querySelectorAll('[data-unit]')];
@@ -1080,7 +1144,8 @@ function showUnit(unit,scrollToPanel=false){
  if(scrollToPanel)panels.find(panel=>panel.dataset.units.split(/\\s+/).includes(unit))?.scrollIntoView({behavior:'smooth',block:'start'});
  if(unit==='logs')loadTechnicalLogs();
  if(unit==='regalos'||unit==='turbo-regalos')loadGiftConfig();
- if(unit==='torneos'||unit==='equipos')loadVsConfig();
+ if(unit==='torneos')loadVsConfig();
+ if(unit==='equipos')loadTeamCatalog();
 }
 $('#businessUnits').addEventListener('click',event=>{
  const button=event.target.closest('button[data-unit]');
@@ -1095,9 +1160,9 @@ showUnit('eventos');
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
 $('#refreshLogs').onclick=loadTechnicalLogs;
+setInterval(()=>{const panel=document.querySelector('[data-units="torneos"]');if(panel&&!panel.hidden)loadVsConfig(true)},3000);
 $('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
-$('#saveGiftTurbo').onclick=async()=>{try{await admin('/api/admin/game-settings',{giftTurboProgress:+$('#gift').value,tapTurboProgress:+$('#tap').value});msg('Turbo de regalos guardado')}catch(e){msg(e.message)}};
 $('#saveGiftCatalog').onclick=async()=>{
  const enabledKeys=Array.from(document.querySelectorAll('#giftCatalogList input[type="checkbox"]:checked')).map(input=>input.dataset.giftKey);
  const rotationSeconds=Number($('#giftRotation').value);
@@ -1111,7 +1176,7 @@ $('#saveTournament').onclick=async()=>{try{await admin('/api/admin/tournament-en
 $('#saveVsConfig').onclick=async()=>{
  const enabledKeys=Array.from(document.querySelectorAll('#vsConfigList input[data-vs-key]:checked')).map(input=>input.dataset.vsKey);
  const popularKeys=Array.from(document.querySelectorAll('#vsConfigList input[data-vs-popular-key]:checked')).map(input=>input.dataset.vsPopularKey);
- try{await admin('/api/admin/vs-config',{enabledKeys,popularKeys});$('#vsConfigMessage').textContent='Configuración guardada. La rotación cambia al llegar a cero la inactividad.'}
+ try{await admin('/api/admin/vs-config',{enabledKeys,popularKeys});await loadVsConfig();$('#vsConfigMessage').textContent='Configuración guardada. La lista se actualiza al terminar cada carrera por inactividad.'}
  catch(error){$('#vsConfigMessage').textContent=error.message}
 };
 $('#saveVoiceConfig').onclick=async()=>{
@@ -1604,7 +1669,8 @@ async function handle(req, res) {
   if (path === '/api/admin/vs-config' && req.method === 'GET') {
     if (!requireAdmin(req, res)) return;
     const stored = await getState('cluss.vs');
-    safeJson(res, 200, { list: vsConfigView(stored.value).list });
+    const config = vsConfigView(stored.value);
+    safeJson(res, 200, { list: config.list, raceList: config.raceList, teams: DEFAULT_TEAM_CATALOG });
     return;
   }
   if (path === '/api/admin/vs-config' && req.method === 'POST') {
@@ -1626,6 +1692,10 @@ async function handle(req, res) {
     }
     const enabled = new Set(enabledKeys);
     const popular = new Set(popularKeys);
+    const popularRaces = DEFAULT_VS.filter(item => enabled.has(item.k) && popular.has(item.k));
+    const nonPopularRaces = DEFAULT_VS.filter(item => enabled.has(item.k) && !popular.has(item.k));
+    const nextNonPopular = nonPopularRaces.find(item => item.k === previous.np) ||
+      nonPopularRaces.find(item => item.k === previous.cur) || nonPopularRaces[0];
     await setState('cluss.vs', {
       v: DEFAULT_VS_CONFIG_VERSION,
       cur: previous.cur,
@@ -1635,6 +1705,10 @@ async function handle(req, res) {
         on: enabled.has(item.k),
         popular: popular.has(item.k)
       })),
+      raceList: [
+        ...popularRaces,
+        ...(nextNonPopular ? [nextNonPopular] : [])
+      ].map(item => ({ k: item.k, played: false })),
       st: previous.st
     });
     broadcastTool('vs-config', { enabledKeys, popularKeys });

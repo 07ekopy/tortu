@@ -22,17 +22,37 @@ test('live event counters count events, not weighted interaction points', () => 
   assert.equal(policy.statEventDelta('gift', 3), 30);
 });
 
-test('idle visual advance alternates teams at two meters per second and resets per race', () => {
+test('idle visual advance waits 15 seconds, alternates teams at two meters per second, and resets per race', () => {
   const browser = { window: {} };
   runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
   const advance = browser.window.TORTUWORLD_ACTIVITY_POLICY.createIdleVisualAdvance();
   advance.reset(1000);
-  assert.deepEqual(Array.from(advance.update(2000, 1000, true)), [2, 0]);
-  assert.deepEqual(Array.from(advance.update(2500, 1000, true)), [2, 1]);
-  assert.deepEqual(Array.from(advance.update(3000, 1000, true)), [2, 2]);
-  assert.deepEqual(Array.from(advance.update(4000, 3000, false)), [2, 2]);
-  advance.reset(4000);
-  assert.deepEqual(Array.from(advance.update(5000, 4000, true)), [2, 0]);
+  assert.deepEqual(Array.from(advance.update(15999, 1000, true)), [0, 0]);
+  assert.deepEqual(Array.from(advance.update(16000, 1000, true)), [0, 0]);
+  assert.deepEqual(Array.from(advance.update(16500, 1000, true)), [1, 0]);
+  assert.deepEqual(Array.from(advance.update(17000, 1000, true)), [2, 0]);
+  assert.deepEqual(Array.from(advance.update(17500, 1000, true)), [2, 1]);
+  assert.deepEqual(Array.from(advance.update(18000, 1000, true)), [2, 2]);
+  assert.deepEqual(Array.from(advance.update(22000, 21000, true)), [2, 2]);
+  assert.deepEqual(Array.from(advance.update(36000, 21000, true)), [2, 2]);
+  assert.deepEqual(Array.from(advance.update(37000, 21000, true)), [4, 2]);
+  advance.reset(37000);
+  assert.deepEqual(Array.from(advance.update(51999, 37000, true)), [0, 0]);
+  assert.deepEqual(Array.from(advance.update(52000, 37000, true)), [0, 0]);
+  assert.deepEqual(Array.from(advance.update(53000, 37000, true)), [2, 0]);
+  assert.deepEqual(Array.from(advance.update(54000, 37000, true)), [2, 2]);
+});
+
+test('gift turbo distance is 10 meters plus 5 meters per diamond for each gift unit', () => {
+  const browser = { window: {} };
+  runInNewContext(readFileSync(new URL('./public/activity-policy.js', import.meta.url), 'utf8'), browser);
+  const meters = browser.window.TORTUWORLD_ACTIVITY_POLICY.giftTurboMeters;
+  const overlay = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  assert.equal(meters(1, 1), 15);
+  assert.equal(meters(3, 1), 25);
+  assert.equal(meters(1, 2), 30);
+  assert.equal(meters(0, 1), 10);
+  assert.match(overlay, /\+10 m \+ 5 m\/💎/);
 });
 
 test('voice phrase cache blocks normalized repeats until the configured minute expires', () => {
@@ -85,26 +105,33 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   assert.equal(window.getVoiceMonitorState().phraseCooldownMs, 120000);
 });
 
-test('deployment check accepts the current signature and reloads a stale overlay once', async () => {
+test('deployment check announces a detected update after reload and reloads stale overlays once', async () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script);
-  const loadCheck = (pageSignature, serverSignature) => {
+  const loadCheck = (pageSignature, serverSignature, href = 'https://overlay.example/') => {
     let replacedUrl = '';
+    const notices = [];
     const window = { caches: { keys: async () => [], delete: async () => true } };
     const context = {
       window,
       caches: window.caches,
-      document: { querySelector: () => ({ content: pageSignature }) },
+      document: {
+        body: { appendChild: notice => notices.push(notice.textContent) },
+        createElement: () => ({ style: {}, remove() {} }),
+        querySelector: () => ({ content: pageSignature }),
+        addEventListener() {}
+      },
       fetch: async () => ({ ok: true, json: async () => ({ signature: serverSignature }) }),
-      location: { href: 'https://overlay.example/', replace: url => { replacedUrl = url; } },
+      location: { href, replace: url => { replacedUrl = url; } },
       history: { replaceState() {} },
       URL,
       Promise,
+      setTimeout,
       console
     };
     runInNewContext(script, context);
-    return { ready: window.clussDeploymentReady, replacedUrl: () => replacedUrl };
+    return { ready: window.clussDeploymentReady, replacedUrl: () => replacedUrl, notices };
   };
   const current = loadCheck('sha256-aaaaaaaaaaaaaaaa', 'sha256-aaaaaaaaaaaaaaaa');
   assert.equal(await current.ready, true);
@@ -112,6 +139,9 @@ test('deployment check accepts the current signature and reloads a stale overlay
   const stale = loadCheck('sha256-aaaaaaaaaaaaaaaa', 'sha256-bbbbbbbbbbbbbbbb');
   assert.equal(await stale.ready, false);
   assert.match(stale.replacedUrl(), /_cluss_deploy=sha256-bbbbbbbbbbbbbbbb/);
+  const refreshed = loadCheck('sha256-bbbbbbbbbbbbbbbb', 'sha256-bbbbbbbbbbbbbbbb', 'https://overlay.example/?_cluss_deploy=sha256-bbbbbbbbbbbbbbbb');
+  assert.equal(await refreshed.ready, true);
+  assert.deepEqual(refreshed.notices, ['Actualización detectada']);
 });
 
 test('username normalization strips leading @ and whitespace', () => {
@@ -218,10 +248,15 @@ test('backend VS settings default to the two requested fixtures and validate sav
 
     const defaults = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
     assert.equal(defaults.status, 200);
-    const defaultList = (await defaults.json()).list;
+    const defaultConfig = await defaults.json();
+    const defaultList = defaultConfig.list;
     assert.equal(defaultList.length, 20);
     assert.deepEqual(defaultList.filter(item => item.on).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
     assert.deepEqual(defaultList.filter(item => item.popular).map(item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+    assert.deepEqual(defaultConfig.raceList.map(item => [item.k, item.played]), [
+      ['cp|ol', false], ['ucl-bc|ucl-rm', false]
+    ]);
+    assert.ok(defaultConfig.teams.some(team => team.id === 'ct-ar' && team.flag === '🇦🇷'));
 
     await fetch(`${baseUrl}/api/state/cluss.vs`, {
       method: 'PUT',
@@ -248,6 +283,19 @@ test('backend VS settings default to the two requested fixtures and validate sav
     const updatedList = (await updated.json()).list;
     assert.deepEqual(updatedList.filter(item => item.on).map(item => item.k), ['ucl-bc|ucl-rm']);
     assert.deepEqual(updatedList.filter(item => item.popular), []);
+    const reconfigured = await fetch(`${baseUrl}/api/admin/vs-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        enabledKeys: ['ucl-bc|ucl-rm', 'lib-boc|lib-riv'],
+        popularKeys: ['ucl-bc|ucl-rm']
+      })
+    });
+    assert.equal(reconfigured.status, 200);
+    const refreshed = await fetch(`${baseUrl}/api/admin/vs-config`, { headers });
+    assert.deepEqual((await refreshed.json()).raceList.map(item => [item.k, item.played]), [
+      ['ucl-bc|ucl-rm', false], ['lib-boc|lib-riv', false]
+    ]);
 
     const invalid = await fetch(`${baseUrl}/api/admin/vs-config`, {
       method: 'POST',
@@ -493,6 +541,9 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   const vs = window.gamiVS;
   assert.deepEqual(Array.from(vs.data.list.filter(item => item.on), item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
   assert.deepEqual(Array.from(vs.data.list.filter(item => item.popular), item => item.k), ['cp|ol', 'ucl-bc|ucl-rm']);
+  assert.deepEqual(Array.from(vs.data.raceList, item => [item.k, item.played]), [
+    ['cp|ol', false], ['ucl-bc|ucl-rm', false]
+  ]);
   const currentKey = vs.data.cur;
   listeners.get('vs-config-update')({ detail: { enabledKeys: ['ucl-bc|ucl-rm'] } });
   assert.equal(vs.curVS().k, currentKey);
@@ -524,6 +575,25 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   assert.equal(next(), 'cp|ol');
   assert.equal(next(), 'ucl-bc|ucl-rm');
   assert.equal(next(), 'cl-cel|cl-ran');
+
+  vs.data.np = 'lib-boc|lib-riv';
+  listeners.get('vs-config-update')({ detail: {
+    enabledKeys: ['cp|ol', 'ucl-bc|ucl-rm', 'lib-boc|lib-riv', 'cl-cel|cl-ran'],
+    popularKeys: ['cp|ol', 'ucl-bc|ucl-rm']
+  } });
+  vs.data.cur = 'cp|ol';
+  const finishRace = (ids, winner) => {
+    context.T.forEach((team, index) => { team.id = ids[index]; });
+    window.liveEventMonitor.completeRound(winner);
+  };
+  finishRace(['ol', 'cp'], 'ol');
+  assert.equal(vs.data.raceList[0].played, true);
+  finishRace(['ucl-bc', 'ucl-rm'], 'ucl-bc');
+  assert.equal(vs.data.cur, 'lib-boc|lib-riv');
+  finishRace(['lib-boc', 'lib-riv'], 'lib-boc');
+  assert.deepEqual(Array.from(vs.data.raceList, item => [item.k, item.played]), [
+    ['cp|ol', false], ['ucl-bc|ucl-rm', false], ['cl-cel|cl-ran', false]
+  ]);
 });
 
 test('honor avatar uses a pulsing TikTok rose without placeholder text when no photo exists', () => {
@@ -660,11 +730,17 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     }
     assert.match(html, /id="serverLogs"/);
     assert.match(html, /Logs técnicos/);
-    const vsPanel = html.match(/<section class="panel business-panel" data-units="equipos torneos">([\s\S]*?)<\/section>/)?.[1];
+    const vsPanel = [...html.matchAll(/<section class="panel business-panel" data-units="torneos">([\s\S]*?)<\/section>/g)]
+      .map(match => match[1]).find(panel => panel.includes('Lista de carreras'));
     assert.ok(vsPanel);
-    assert.match(vsPanel, /rotación de VS/);
+    assert.match(vsPanel, /Lista de carreras/);
+    assert.match(vsPanel, /id="raceList"/);
+    const teamsPanel = html.match(/<section class="panel business-panel" data-units="equipos">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(teamsPanel);
+    assert.match(teamsPanel, /Catálogo de banderas/);
     assert.match(script, /dataset\.vsPopularKey=duel\.k/);
-    assert.match(script, /unit==='equipos'\)loadVsConfig\(\)/);
+    assert.match(script, /unit==='torneos'\)loadVsConfig\(\)/);
+    assert.match(script, /unit==='equipos'\)loadTeamCatalog\(\)/);
     const navigationStart = script.indexOf('const unitButtons=');
     const navigationEnd = script.indexOf("$('#clock').textContent");
     const navigationCode = script.slice(navigationStart, navigationEnd);
@@ -1220,6 +1296,7 @@ test('service worker caches only the shell and bypasses live API responses', () 
   assert.match(worker, /request\.mode === 'navigate'/);
   assert.match(worker, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(worker, /tortu2-shell-/);
+  assert.match(worker, /CACHE_PREFIX \+ 'v4'/);
 });
 
 test('voice-priority response matches the overlay speech template contract', () => {

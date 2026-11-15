@@ -51,6 +51,13 @@
     giftProgress: function (countValue, progress) {
       return Math.max(0, Number(countValue) || 0) * Math.max(0, Number(progress) || 0);
     },
+    giftTurboMeters: function (value, units) {
+      var diamonds = Number(value);
+      var countValue = Number(units);
+      var giftCount = Number.isFinite(countValue) && countValue > 0 ? Math.floor(countValue) : 0;
+      var diamondValue = Number.isFinite(diamonds) && diamonds > 0 ? diamonds : 0;
+      return giftCount * (10 + 5 * diamondValue);
+    },
     giftTurboDuration: function (countValue, duration) {
       return Math.max(0, Math.floor(Number(countValue) || 0)) * Math.max(0, Number(duration) || 0);
     },
@@ -71,21 +78,28 @@
       var meters = [0, 0];
       var idleMs = 0;
       var lastAt = null;
+      var interactionAt = null;
       return {
         reset: function (now) {
           meters = [0, 0];
           idleMs = 0;
           lastAt = Number(now);
           if (!Number.isFinite(lastAt)) lastAt = Date.now();
+          interactionAt = lastAt;
           return meters.slice();
         },
         update: function (now, lastInteractionAt, enabled) {
           var current = Number(now);
           if (!Number.isFinite(current)) return meters.slice();
           var interaction = Number(lastInteractionAt);
+          if (Number.isFinite(interaction) && interactionAt !== null && interaction > interactionAt) {
+            idleMs = 0;
+            interactionAt = interaction;
+          }
+          var idleStart = Number.isFinite(interaction) ? interaction + 15000 : current;
           var start = lastAt === null
             ? current
-            : Math.max(lastAt, Number.isFinite(interaction) ? interaction : current);
+            : Math.max(lastAt, idleStart);
           var remaining = enabled && lastAt !== null ? Math.max(0, current - start) : 0;
           while (remaining > 0) {
             var turnPosition = idleMs % 1000;

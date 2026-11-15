@@ -389,6 +389,17 @@ window.checkClussDeploymentVersion=()=>{
   if(typeof result.signature!=='string'||!signaturePattern.test(result.signature))throw new Error('El backend devolvió una firma de despliegue no válida.');
   const url=new URL(location.href);
   if(result.signature===pageSignature){
+   if(url.searchParams.get('_cluss_deploy')===pageSignature){
+    const showUpdateDetected=()=>{
+     if(!document.body)return;
+     const notice=document.createElement('div');
+     notice.textContent='Actualización detectada';
+     Object.assign(notice.style,{position:'fixed',top:'12px',left:'50%',transform:'translateX(-50%)',zIndex:'99999',padding:'10px 16px',borderRadius:'10px',background:'#123c2d',color:'#eafff1',font:'700 14px system-ui',boxShadow:'0 4px 18px #0008'});
+     document.body.appendChild(notice);setTimeout(()=>notice.remove(),3500);
+    };
+    if(document.body)showUpdateDetected();
+    else document.addEventListener('DOMContentLoaded',showUpdateDetected,{once:true});
+   }
    if(url.searchParams.has('_cluss_deploy')){url.searchParams.delete('_cluss_deploy');history.replaceState(null,'',url)}
    return true
   }
@@ -1073,7 +1084,7 @@ const TURBO_PPS=4,GIFT_TURBO_MS=15000,HEART_TURBO_MS=7000;
 let GIFT_TURBO_PROGRESS=6,HEART_TURBO_PROGRESS=20;
 let GIFT_TURBO_PPS=GIFT_TURBO_PROGRESS/(GIFT_TURBO_MS/1000),HEART_TURBO_PPS=HEART_TURBO_PROGRESS/(HEART_TURBO_MS/1000);
 function turboGain(rate,ms,handicap){return rate*ms/1000*handicap}
-const GIFT_PROGRESS=10,GIFT_TEAM_WINDOW_MS=60000; /* avance directo de cada regalo; el equipo se resuelve por chat reciente */
+const GIFT_PROGRESS=10,GIFT_TEAM_WINDOW_MS=60000; /* bonificación estadística; el turbo convierte diamantes a metros */
 /* Devuelve el equipo que un usuario nombro en el chat hace poco (para saber a quien apoya su regalo). */
 function recentChatTeam(key,now=Date.now()){
  const pick=recentChatPicks.get(key);
@@ -1323,8 +1334,9 @@ function say(m){$('#bub').textContent=m}
 /* Redibuja posiciones (avance por inactividad solo visual), pero el lider depende del progreso real S[i].p. */
 function update(){
  let best=-1,mx=0;
- const idleAdvance=typeof window.getIdleVisualAdvanceMeters==='function'?window.getIdleVisualAdvanceMeters():0;
- S.forEach((s,i)=>{const p=Math.min(100,s.p+(idleAdvance[i]||0)),h=p*4.7;
+ const idleAdvance=typeof window.getIdleVisualAdvanceMeters==='function'?window.getIdleVisualAdvanceMeters():[0,0];
+ const trackMeters=typeof window.getRaceTrackMeters==='function'?window.getRaceTrackMeters():100;
+  S.forEach((s,i)=>{const p=Math.min(100,s.p+(idleAdvance[i]||0)*100/trackMeters),h=p*4.7;
   $('#tt'+i).style.transform=`translateY(${54-p*4.8}px)`; /* +34: arranca mas abajo, cubriendo los huevos chicos · 4.8: al 100% la CABEZA toca la linea de META */
   $('#clubName'+i).setAttribute('y',p<=50?456+54-p*4.8-16:528+54-p*4.8+14);
   $('#gf'+i).setAttribute('y',536-h);$('#gf'+i).setAttribute('height',h);$('#gk'+i).setAttribute('cy',536-h);
@@ -1437,7 +1449,7 @@ function handleLiveEntry(entry){
   if(typeof window.recordLiveTap!=='function')throw new Error('El contador de taps del LIVE no está inicializado.');
   window.recordLiveTap(team,tapCount);
  }
- push(team,type,count);
+ push(team,type,count,entry.giftDiamonds);
 }
 /* Pinta el estado de conexion (verde conectado, naranja conectando, rojo sin conexion). Lo llaman los mensajes SSE "status" */
 function setConnection(status){
@@ -1810,9 +1822,10 @@ push=function(i,type,n=1){
   if(type!=='gift')ach('first');
   if(type==='like')S[i].l+=n;
   if(type==='gift'){
-   const gifts=Math.max(1,Math.floor(Number(n)||1)),progress=TAP_POLICY.giftProgress(gifts,GIFT_PROGRESS);
-   S[i].g+=gifts;S[i].p=Math.min(100,S[i].p+progress);
-   lead=update();float(i,'+'+progress+' m');walk(i);giftTurboOn(i,gifts);
+   const gifts=Math.max(1,Math.floor(Number(n)||1)),diamonds=Number(arguments[3]);
+   const perGift=Number.isFinite(diamonds)&&diamonds>0?diamonds/gifts:1;
+   S[i].g+=gifts;giftTurboOn(i,gifts,perGift);
+   float(i,'⚡+'+TAP_POLICY.giftTurboMeters(perGift,gifts)+' m');walk(i);
   }
  }
  if(was||i<0||!S[i])return;
@@ -2157,7 +2170,7 @@ function resetCopas(){
  toast('Copas reiniciadas: todo empieza de cero','🔄');
 }
 const _reset=reset;
-reset=function(){ajustesDePartida();seen.clear();known.clear();userScore.clear();recent.forEach(l=>l.length=0);fanTurn++;gs.fill(2);T.forEach((_,i)=>{heart[i]=0;renderHeart(i);$('#in'+i).style.setProperty('--s',2);renderNest(i);renderPod(i)});eventTimers.forEach(clearTimeout);eventTimers.clear();document.querySelectorAll('.fan-alerts').forEach(layer=>layer.replaceChildren());voReset();contrib.clear();us.clear();joined.clear();turbo.fill(0);turboPower.fill(0);giftTurboUntil.fill(0);lastMvp=null;hy.hidden=true;T.forEach((_,i)=>$('#ln'+i).classList.remove('turbo'));leads=0;sprint=false;tk=0;$('#app').classList.remove('sprint');_reset();A.sfx('start');hud();logStat({type:'round-start',duel:DUELO});toast(T[0].n+'  ·  '+T[1].n,'💬')}; /* ronda nueva en las estadisticas */
+reset=function(){ajustesDePartida();seen.clear();known.clear();userScore.clear();recent.forEach(l=>l.length=0);fanTurn++;gs.fill(2);T.forEach((_,i)=>{heart[i]=0;renderHeart(i);$('#in'+i).style.setProperty('--s',2);renderNest(i);renderPod(i)});eventTimers.forEach(clearTimeout);eventTimers.clear();document.querySelectorAll('.fan-alerts').forEach(layer=>layer.replaceChildren());voReset();contrib.clear();us.clear();joined.clear();turbo.fill(0);turboPower.fill(0);giftTurboUntil.fill(0);giftTurboRate.fill(0);lastMvp=null;hy.hidden=true;T.forEach((_,i)=>$('#ln'+i).classList.remove('turbo'));leads=0;sprint=false;tk=0;$('#app').classList.remove('sprint');_reset();A.sfx('start');hud();logStat({type:'round-start',duel:DUELO});toast(T[0].n+'  ·  '+T[1].n,'💬')}; /* ronda nueva en las estadisticas */
 window.tortugas.reset=reset;window.tortugas.resetCopas=resetCopas;
 const _resetTurboLimit=reset;
 setInterval(()=>{try{if(!over)syncHeartLimit()}catch(e){}},250); /* sube el limite cada 10% de pista */
@@ -2334,7 +2347,7 @@ $('#bBackend').onclick=()=>{location.href='/backend'};
 $('#bMonitor').onclick=()=>{const panel=$('#stp');panel.hidden=false;stTab('eventos')};
 
 /* ===== PREMIOS POR ACCIONES DE ESPECTADORES ===== */
-const us=new Map(),joined=new Set(),welcomed=new Set(),turbo=[0,0,0],turboPower=[0,0,0],giftTurboUntil=[0,0,0];let lastMvp=null,hyT;window.__gamiTurbo={turbo:turbo,giftTurboUntil:giftTurboUntil};
+const us=new Map(),joined=new Set(),welcomed=new Set(),turbo=[0,0,0],turboPower=[0,0,0],giftTurboUntil=[0,0,0],giftTurboRate=[0,0,0];let lastMvp=null,hyT;window.__gamiTurbo={turbo:turbo,giftTurboUntil:giftTurboUntil};
 const hy=document.createElement('div');hy.id='hype';hy.hidden=true;$('#app').append(hy);
 /* Cartel temporal de reaccion (nombre del usuario + mensaje) */
 function hype(ic,name,txt,col){
@@ -2355,14 +2368,25 @@ function finishForLowActivity(now=Date.now()){
  $('#ln'+winner).classList.add('turbo');
  S[winner].p=100;lead=update();win(winner);
 }
-function giftTurboOn(t,count){giftTurboUntil[t]=Math.max(performance.now(),giftTurboUntil[t])+TAP_POLICY.giftTurboDuration(count,GIFT_TURBO_MS)}
+function giftTurboOn(t,count,diamondsPerGift){
+ const now=performance.now(),units=Math.max(1,Math.floor(Number(count)||1));
+ const remainingMs=Math.max(0,giftTurboUntil[t]-now),remainingMeters=giftTurboRate[t]*remainingMs/1000;
+ const addedMs=units*GIFT_TURBO_MS,addedMeters=TAP_POLICY.giftTurboMeters(diamondsPerGift,units);
+ const totalMs=remainingMs+addedMs;
+ giftTurboRate[t]=totalMs>0?(remainingMeters+addedMeters)*1000/totalMs:0;
+ giftTurboUntil[t]=now+totalMs;
+}
 setInterval(()=>{
  if(over)return;const n=performance.now();
  T.forEach((_,i)=>{
-  const on=turbo[i]>n,giftOn=giftTurboUntil[i]>n,pts=(on?turboGain(turboPower[i],250,1):0)+(giftOn?GIFT_TURBO_PPS*250/1000:0);
+  const on=turbo[i]>n,giftOn=giftTurboUntil[i]>n;
+  const trackMeters=typeof window.getRaceTrackMeters==='function'?window.getRaceTrackMeters():100;
+  const giftPts=giftOn?giftTurboRate[i]*250/1000*100/trackMeters:0;
+  const pts=(on?turboGain(turboPower[i],250,1):0)+giftPts;
   $('#ln'+i).classList.toggle('turbo',on||giftOn);
   if(pts){S[i].p=Math.min(100,S[i].p+pts);walk(i)}
   if(!on)turboPower[i]=0;
+  if(!giftOn)giftTurboRate[i]=0;
  });
  update();
  renderInactivityCountdown();
@@ -4631,7 +4655,7 @@ function renderCard(it){
  card.classList.toggle('t3',tr.k===3);
  const av=it.url?'<img alt="" referrerpolicy="no-referrer" src="'+esc(it.url)+'" onerror="this.replaceWith(document.createTextNode(\'🎁\'))">':esc(([...it.user][0]||'🎁').toUpperCase());
  const what=(it.gift?esc(it.gift):'¡Un regalo!')+(it.count>1?' ×'+it.count:'');
- const perks='<b class="tb">⚡ TURBO '+TURBO_S+'s</b><b>🚀 +10 m'+(it.count>1?' ×'+it.count:'')+'</b>'+(streak>=2?'<b class="st">🔥 RACHA ×'+streak+'</b>':'');
+ const perks='<b class="tb">⚡ TURBO '+TURBO_S+'s</b><b>🚀 +10 m + 5 m/💎</b>'+(streak>=2?'<b class="st">🔥 RACHA ×'+streak+'</b>':'');
  let title,why;
  if(it.isNew){title=tr.ic+' ¡NUEVO MIEMBRO DE HONOR!';why='Por su regalo entra al cuadro de honor'+(tm?' y su '+kindOf(it.t)+' acelera con turbo.':'.')}
  else if(it.tierUp){title=tr.ic+' ¡SUBE A '+tr.lb+'!';why=''}
@@ -5238,6 +5262,7 @@ function ensureLevels(){DEF_LEVELS.forEach(d=>{if(!TB.levels.some(l=>l.id===d.id
 ensureLevels();
 const LV=id=>TB.levels.find(l=>l.id===id)||{};
 const TRACK=()=>+TB.trackMeters||100;
+window.getRaceTrackMeters=TRACK;
 const fill=(s,o)=>String(s||'').replace(/\{(\w+)\}/g,(_,k)=>o[k]==null?'':o[k]);
 /* 3) Voz y cola */
 const Q=[],phraseDictionary=new Map(),pendingPhrases=new Set();let cur=null,lastEv=0,lastMatch=0,primed=false;
@@ -5335,7 +5360,10 @@ function onEvent(e){
 const _rx=M.receive;if(typeof _rx==='function')M.receive=function(e){const r=_rx.apply(this,arguments);safe(()=>onEvent(e));return r};
 /* 5) Como va el partido, en METROS (1 punto de pista = 1 metro; meta = 100) */
 const nm=i=>{const n=String(safe(()=>T[i].n)||'');return n?n[0]+n.slice(1).toLowerCase():''};
-const mts=i=>Math.max(0,Math.min(TRACK(),Math.round((safe(()=>S[i].p)||0)*TRACK()/100)));
+const mts=i=>{
+ const idle=typeof window.getIdleVisualAdvanceMeters==='function'?window.getIdleVisualAdvanceMeters():[0,0];
+ return Math.max(0,Math.min(TRACK(),Math.round((safe(()=>S[i].p)||0)*TRACK()/100+(idle[i]||0))));
+};
 function describe(kind){
  const a=mts(0),b=mts(1),li=a>=b?0:1,oi=1-li;
  const o={lead:nm(li),leadM:mts(li),other:nm(oi),otherM:mts(oi),left:TRACK()-mts(li),track:TRACK()};
@@ -5382,17 +5410,17 @@ const safe=f=>{try{return f()}catch(e){return undefined}};
 const M=window.liveEventMonitor;
 if(!M||!safe(()=>CLASSIC_DEFS)||!safe(()=>SRV)||!safe(()=>T)||!safe(()=>P))return;
 const K='cluss.vs',key=(a,b)=>[a,b].sort().join('|');
-const STARTER_KEY=key('ol','cp'),STARTER_KEYS=new Set([STARTER_KEY,key('ucl-bc','ucl-rm')]),CONFIG_VERSION=4,LEGACY_CONFIG_VERSION=3;
+const STARTER_KEY=key('ol','cp'),STARTER_KEYS=new Set([STARTER_KEY,key('ucl-bc','ucl-rm')]),CONFIG_VERSION=5,LEGACY_CONFIG_VERSION=4;
 const nmOf=id=>{const n=String(safe(()=>tournamentItem(id).n)||id);return n[0]+n.slice(1).toLowerCase()};
 const DEF=CLASSIC_DEFS.map(d=>({k:key(d[0],d[1]),a:d[0],b:d[1],n:d[2],on:STARTER_KEYS.has(key(d[0],d[1])),popular:STARTER_KEYS.has(key(d[0],d[1]))}));
 /* ---------- LISTA + ESTADISTICAS (documento del SERVIDOR: GET/PUT /api/state/cluss.vs) ---------- */
 const raw=safe(()=>SRV.get(K,null))||{};
 const hasCurrentConfig=raw.v===CONFIG_VERSION;
-const hasStoredConfig=hasCurrentConfig||(raw.v===LEGACY_CONFIG_VERSION&&Array.isArray(raw.list));
-const D={cur:hasStoredConfig?raw.cur||'':STARTER_KEY,np:hasCurrentConfig&&typeof raw.np==='string'?raw.np:'',st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
+const hasStoredConfig=hasCurrentConfig||([LEGACY_CONFIG_VERSION,3].includes(raw.v)&&Array.isArray(raw.list));
+const D={cur:hasStoredConfig?raw.cur||'':STARTER_KEY,np:(hasCurrentConfig||raw.v===4)&&typeof raw.np==='string'?raw.np:'',raceList:hasCurrentConfig&&Array.isArray(raw.raceList)?raw.raceList.filter(x=>x&&typeof x.k==='string').map(x=>({k:x.k,played:x.played===true})):[],st:(raw.st&&typeof raw.st==='object')?raw.st:{},list:[]};
 (hasStoredConfig&&Array.isArray(raw.list)?raw.list:[]).forEach(x=>{const d=DEF.find(y=>y.k===x.k);if(d&&!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d,{on:x.on!==false,popular:hasCurrentConfig?x.popular===true:STARTER_KEYS.has(x.k)}))});
 DEF.forEach(d=>{if(!D.list.some(y=>y.k===d.k))D.list.push(Object.assign({},d))}); /* VS nuevos al final */
-const save=()=>safe(()=>SRV.set(K,{v:CONFIG_VERSION,cur:D.cur,np:D.np,list:D.list.map(x=>({k:x.k,on:x.on,popular:x.popular})),st:D.st}));
+const save=()=>safe(()=>SRV.set(K,{v:CONFIG_VERSION,cur:D.cur,np:D.np,list:D.list.map(x=>({k:x.k,on:x.on,popular:x.popular})),raceList:D.raceList.map(x=>({k:x.k,played:x.played})),st:D.st}));
 const byKey=k=>D.list.find(x=>x.k===k);
 const en=()=>D.list.filter(x=>x.on);
 const duelKey=()=>key(T[0].id,T[1].id);
@@ -5404,6 +5432,7 @@ function rotationList(){
  if(!next&&others.length){const current=others.find(x=>x.k===D.cur);next=current||others[0];D.np=next.k}
  return popular.concat(next?[next]:[]);
 }
+function buildRaceList(){return rotationList().map(item=>({k:item.k,played:false}))}
 function advance(){
  const list=rotationList();if(!list.length)return D.cur;
  const p=list.findIndex(x=>x.k===D.cur);
@@ -5414,6 +5443,8 @@ function advance(){
  const next=rotationList();
  return next.length?next[0].k:D.cur;
 }
+if(!D.raceList.length)D.raceList=buildRaceList();
+save();
 const curVS=()=>byKey(D.cur)||null; /* el VS actual se conserva hasta que la inactividad llegue a cero */
 window.addEventListener('vs-config-update',event=>{
  const detail=event.detail||{},enabledKeys=detail.enabledKeys,popularKeys=detail.popularKeys;
@@ -5421,6 +5452,7 @@ window.addEventListener('vs-config-update',event=>{
  const enabled=new Set(enabledKeys);
  const popular=Array.isArray(popularKeys)?new Set(popularKeys):null;
  D.list.forEach(item=>{item.on=enabled.has(item.k);if(popular)item.popular=popular.has(item.k)});
+ D.raceList=buildRaceList();
  save();render();
 });
 /* ---------- MOTOR DE ESTADISTICAS: valor de interaccion de cada VS ---------- */
@@ -5442,7 +5474,12 @@ if(typeof _cr==='function')M.completeRound=function(w){
   s.r+=1;s.ev+=R.ev;s.val+=R.val;if(!R.ev)s.empty+=1;s.last=Date.now();
   Object.keys(R.by).forEach(id=>{s.by[id]=(s.by[id]||0)+R.by[id]});
   s.win[w]=(s.win[w]||0)+1;
-  if(idle&&k===D.cur){const nx=advance();if(nx!==D.cur)D.cur=nx;idleJump=D.list.some(item=>item.on)} /* la inactividad completa una carrera y avanza la rotacion */
+  if(idle&&k===D.cur){
+   const played=D.raceList.find(item=>item.k===k&&!item.played);if(played)played.played=true;
+   const nx=advance();if(nx!==D.cur)D.cur=nx;
+   if(D.raceList.length&&D.raceList.every(item=>item.played))D.raceList=buildRaceList();
+   idleJump=D.list.some(item=>item.on)
+  } /* la inactividad completa una carrera y avanza la rotacion */
   save();render();
  });
  return r;
