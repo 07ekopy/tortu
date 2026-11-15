@@ -795,7 +795,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="fan-alerts" id="event-alerts" aria-hidden="true"></div>
 <div class="side">
 <div class="bub" id="bub" aria-live="polite">¡Y ARRANCAN LAS TORTUGAS!</div>
-<svg id="donTortuAvatar" width="64" height="64" viewBox="0 0 84 84" role="img" aria-label="Don Tortu" hidden>
+<svg id="donTortuAvatar" width="64" height="64" viewBox="0 0 84 84" role="img" aria-label="Don Tortu" hidden style="display:none">
 <defs><radialGradient id="sp" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#3f2713"/></radialGradient><clipPath id="spc"><circle cx="42" cy="42" r="40"/></clipPath></defs>
 <circle cx="42" cy="42" r="40" fill="url(#sp)" stroke="#f1e8d6" stroke-width="3"/>
 <g clip-path="url(#spc)">
@@ -814,7 +814,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <circle cx="40" cy="49" r="1" fill="#2f7d32"/><circle cx="44" cy="49" r="1" fill="#2f7d32"/>
 <path class="mo" d="M35 54 Q42 61 49 54" fill="none" stroke="#2a1d14" stroke-width="2.4" stroke-linecap="round"/><ellipse class="mo2" cx="42" cy="57" rx="6" ry="4" fill="#7a1f1f" stroke="#2a1d14" stroke-width="2" display="none"/>
 </svg>
-<span class="plate" style="padding:4px 10px;font-size:12px" hidden>DON TORTU</span>
+<span class="plate" style="padding:4px 10px;font-size:12px;display:none" hidden>DON TORTU</span>
 <div class="top3" id="top3" role="group" aria-label="Copas por club"></div>
 </div>
 <div class="win" id="win" role="alertdialog" aria-label="Ganador"></div>
@@ -2621,9 +2621,9 @@ function talk(ms,team){
 function setDonTortuEnabled(enabled){
  if(typeof enabled!=='boolean')return;
  window.donTortuEnabled=enabled;P.vo=enabled?1:0;
- dt0.hidden=!enabled;
+ dt0.hidden=!enabled;dt0.style.display=enabled?'':'none';
  const nameplate=dt0.nextElementSibling;
- if(nameplate&&nameplate.classList.contains('plate'))nameplate.hidden=!enabled;
+ if(nameplate&&nameplate.classList.contains('plate')){nameplate.hidden=!enabled;nameplate.style.display=enabled?'':'none'}
  if(!enabled){
   voiceQueue.length=0;giftQueue.length=0;chatQueue.length=0;narratorQueue.length=0;
   activeVoiceRequest=null;giftSpeaking=false;giftSpeechGeneration++;

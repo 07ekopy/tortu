@@ -113,9 +113,10 @@ test('backend voice setting controls Don Tortu avatar and speech', () => {
   const setSource = html.match(/function setDonTortuEnabled\(enabled\)\{[\s\S]*?\n\}/)?.[0];
   assert.ok(setSource);
   let saved = 0, cancelled = 0, ducked = 0;
-  const nameplate = { hidden: false, classList: { contains: name => name === 'plate' } };
+  const nameplate = { hidden: false, style: { display: '' }, classList: { contains: name => name === 'plate' } };
   const avatar = {
     hidden: false,
+    style: { display: '' },
     nextElementSibling: nameplate,
     classList: { add() {}, remove() {} }
   };
@@ -141,7 +142,9 @@ test('backend voice setting controls Don Tortu avatar and speech', () => {
   context.toggleDonTortu(false);
   assert.equal(context.P.vo, 0);
   assert.equal(avatar.hidden, true);
+  assert.equal(avatar.style.display, 'none');
   assert.equal(nameplate.hidden, true);
+  assert.equal(nameplate.style.display, 'none');
   assert.equal(context.voiceQueue.length + context.giftQueue.length + context.chatQueue.length + context.narratorQueue.length, 0);
   assert.equal(context.activeVoiceRequest, null);
   assert.equal(context.giftSpeaking, false);
@@ -151,7 +154,9 @@ test('backend voice setting controls Don Tortu avatar and speech', () => {
   context.toggleDonTortu(true);
   assert.equal(context.P.vo, 1);
   assert.equal(avatar.hidden, false);
+  assert.equal(avatar.style.display, '');
   assert.equal(nameplate.hidden, false);
+  assert.equal(nameplate.style.display, '');
   assert.equal(saved, 2);
   assert.match(html, /id="donTortuAvatar"[^>]+aria-label="Don Tortu"/);
   assert.match(html, /document\.querySelector\('#donTortuAvatar'\)/);
