@@ -144,11 +144,13 @@ let connectionAttemptId = 0;
 let retryTimer = null;
 let retryDeadline = 0;
 let retryCount = 0;
+let lastUsernameSwitchAt = 0;
 let shuttingDown = false;
 let adminToken = process.env.BACKEND_ADMIN_TOKEN || (process.env.NODE_ENV === 'production' ? '' : '123');
 const ADMIN_SESSION_COOKIE = 'tortu_admin_session';
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_TECHNICAL_LOGS = 200;
+const MAX_SAVED_USERNAMES = 24;
 let chatMetaQueue = Promise.resolve();
 let settings = {
   username: '',
@@ -184,16 +186,32 @@ function usernameHistory() {
     if (!username || seen.has(key)) continue;
     seen.add(key);
     usernames.push(username);
-    if (usernames.length === 20) break;
+    if (usernames.length === MAX_SAVED_USERNAMES) break;
   }
   return usernames;
+}
+
+function nextSavedUsername(current, candidates = usernameHistory()) {
+  const usernames = Array.from(new Set(candidates.map(normalizeUsername).filter(Boolean)));
+  if (!usernames.length) return '';
+  const currentIndex = usernames.findIndex(username => username.toLowerCase() === normalizeUsername(current).toLowerCase());
+  return usernames[currentIndex < 0 ? 0 : (currentIndex + 1) % usernames.length];
+}
+
+function isSameOriginRequest(req) {
+  if (typeof req.headers.origin !== 'string' || typeof req.headers.host !== 'string') return false;
+  try {
+    return new URL(req.headers.origin).host.toLowerCase() === req.headers.host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 function rememberUsername(value) {
   const username = normalizeUsername(value);
   const remaining = usernameHistory().filter(item => item.toLowerCase() !== username.toLowerCase());
   settings.username = username;
-  settings.savedUsernames = [username, ...remaining].slice(0, 20);
+  settings.savedUsernames = [username, ...remaining].slice(0, MAX_SAVED_USERNAMES);
   return settings.savedUsernames;
 }
 
@@ -1749,6 +1767,33 @@ async function handle(req, res) {
     safeJson(res, 200, { ok: true, username, usernames: usernameHistory(), message: 'Conexión iniciada.' });
     return;
   }
+  if (path === '/api/connect/next' && req.method === 'POST') {
+    if (req.headers['x-overlay-control'] !== 'switch-user' || !isSameOriginRequest(req)) {
+      safeJson(res, 403, { ok: false, message: 'El cambio de usuario solo está disponible desde el overlay.' });
+      return;
+    }
+    const now = Date.now();
+    if (now - lastUsernameSwitchAt < 1500) {
+      safeJson(res, 429, { ok: false, message: 'Espera un momento antes de cambiar otra vez de usuario.' });
+      return;
+    }
+    const currentUsername = configuredUsername();
+    const username = nextSavedUsername(currentUsername);
+    if (!username || username.toLowerCase() === currentUsername.toLowerCase()) {
+      safeJson(res, 409, { ok: false, message: 'No hay otro usuario guardado para conectar.' });
+      return;
+    }
+    lastUsernameSwitchAt = now;
+    rememberUsername(username);
+    await persistSettings();
+    retryDeadline = Date.now() + 5 * 60 * 1000;
+    retryCount = 0;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    void createConnection(username);
+    safeJson(res, 200, { ok: true, username, message: `Conectando a @${username}.` });
+    return;
+  }
   if (path === '/api/game-tools/overlay-heartbeat' && req.method === 'POST') {
     const body = await readBody(req);
     if (typeof body.clientId !== 'string' || body.clientId.length > 100 || typeof body.visible !== 'boolean') {
@@ -2136,6 +2181,7 @@ async function main() {
 export {
   normalizeUsername,
   configuredUsername,
+  nextSavedUsername,
   normalizeTikTokEvent,
   comboDelta,
   dedupeEvent,

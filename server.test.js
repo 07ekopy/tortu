@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { comboDelta, configuredUsername, dedupeEvent, handle, handleTikTokEvent, identifyCountry, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
+import { comboDelta, configuredUsername, dedupeEvent, handle, handleTikTokEvent, identifyCountry, nextSavedUsername, normalizeTikTokEvent, normalizeUsername, socialEventType } from './server.js';
 import voicePriority from './server/voice-priority.js';
 
 test('live event counters count events, not weighted interaction points', () => {
@@ -259,6 +259,14 @@ test('TikTok connection defaults to tortulive when no username is configured', (
   }
 });
 
+test('saved TikTok usernames cycle to the next distinct account', () => {
+  const usernames = ['radiofenica', '@reciclemaiis', 'tortulive', 'radiofenica'];
+  assert.equal(nextSavedUsername('radiofenica', usernames), 'reciclemaiis');
+  assert.equal(nextSavedUsername('reciclemaiis', usernames), 'tortulive');
+  assert.equal(nextSavedUsername('tortulive', usernames), 'radiofenica');
+  assert.equal(nextSavedUsername('unknown', []), '');
+});
+
 test('backend login protects the panel and admin APIs until a session cookie is set', async () => {
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'test-admin-token';
@@ -291,6 +299,8 @@ test('backend login protects the panel and admin APIs until a session cookie is 
       body: JSON.stringify({ username: 'other_account' })
     });
     assert.equal(lockedConnect.status, 401);
+    const lockedUserSwitch = await fetch(`${baseUrl}/api/connect/next`, { method: 'POST' });
+    assert.equal(lockedUserSwitch.status, 403);
 
     const rejectedLogin = await fetch(`${baseUrl}/api/admin/session`, {
       method: 'POST',
@@ -1355,6 +1365,7 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
 
 test('overlay keeps its race design and opens monitor tabs matching the backend units', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const server = readFileSync(new URL('./server.js', import.meta.url), 'utf8');
   assert.match(html, /<main id="app">/);
   assert.match(html, /id="bMonitor"/);
   assert.match(html, /aria-label="Monitor por unidad de negocio"/);
@@ -1363,6 +1374,10 @@ test('overlay keeps its race design and opens monitor tabs matching the backend 
   }
   assert.doesNotMatch(html, /data-tab="narrador"/);
   assert.match(html, /data-tab="usuarios"[^>]*>👤 Usuarios<\/button><button data-tab="voz"[^>]*>♫ Voz/);
+  assert.match(html, /switchUserButton\.id='switchTikTokUser'/);
+  assert.match(html, /switchUserButton\.textContent='👤'/);
+  assert.match(html, /fetch\('\/api\/connect\/next',\{method:'POST',headers:\{'X-Overlay-Control':'switch-user'\}\}\)/);
+  assert.match(server, /path === '\/api\/connect\/next' && req\.method === 'POST'/);
   assert.match(html, /addEventListener\('motor-state'/);
 });
 
