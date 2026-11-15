@@ -177,7 +177,7 @@ function configuredUsername(savedUsername = settings.username) {
 function usernameHistory() {
   const usernames = [];
   const seen = new Set();
-  for (const value of [configuredUsername(), ...(Array.isArray(settings.savedUsernames) ? settings.savedUsernames : [])]) {
+  for (const value of [configuredUsername(), 'radiofenica', 'reciclemaiis', 'tortulive', ...(Array.isArray(settings.savedUsernames) ? settings.savedUsernames : [])]) {
     if (typeof value !== 'string') continue;
     const username = normalizeUsername(value);
     const key = username.toLowerCase();
@@ -745,11 +745,18 @@ async function loadGiftConfig() {
 
 function voiceConfigView(value) {
   const minutes = Number(value?.repeatCooldownMinutes);
+  const storedLevels = value?.enabledLevels && typeof value.enabledLevels === 'object' && !Array.isArray(value.enabledLevels)
+    ? value.enabledLevels
+    : {};
   return {
     repeatCooldownMinutes: Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
       ? minutes
       : voicePriority.repeatCooldownMinutes,
-    donTortuEnabled: value?.donTortuEnabled === true
+    donTortuEnabled: value?.donTortuEnabled === true,
+    enabledLevels: Object.fromEntries(voicePriority.levels.map(level => [
+      level.id,
+      typeof storedLevels[level.id] === 'boolean' ? storedLevels[level.id] : true
+    ]))
   };
 }
 
@@ -1185,11 +1192,11 @@ input,select{border:1px solid #31435a;background:#0a1220;color:var(--text);paddi
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 14px}.stat{padding:15px 17px}.stat-label{display:block;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.stat strong{display:block;font-size:22px;margin-top:7px;letter-spacing:-.03em}.stat small{color:var(--muted)}
 .unit-nav{display:flex;gap:8px;overflow-x:auto;padding:7px 2px 14px;margin:4px 0 8px;scrollbar-width:thin}.unit-nav button{flex:0 0 auto;padding:.58rem .85rem;font-size:12px}.unit-nav button.active{border-color:var(--cyan);background:#173449;color:#fff;box-shadow:0 0 0 2px #62e6ff18}
 .layout{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.panel{padding:19px;margin-bottom:14px}.panel header{margin-bottom:16px}.panel h2{display:flex;align-items:center;gap:9px}.icon{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;background:#1b3341;color:var(--cyan)}
-.voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px 1fr auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
+.voice-panel{border-color:#355654;background:linear-gradient(140deg,#13231f,#101827)}.voice-order{list-style:none;padding:0;margin:15px 0 0;display:grid;gap:9px}.voice-card{display:grid;grid-template-columns:39px minmax(0,1fr) auto auto;gap:12px;align-items:start;padding:13px;border:1px solid #294237;border-radius:11px;background:#0d191b}.voice-rank{width:34px;height:34px;display:grid;place-items:center;border-radius:10px;color:#0a1a1b;background:var(--lime);font-weight:950}.voice-copy b{font-size:13px}.voice-copy p{margin:3px 0;color:var(--muted);font-size:12px}.voice-copy small{display:block;color:#a8c0bd;overflow-wrap:anywhere;font-size:11px}.voice-level{color:#8da69e;font-size:9px;letter-spacing:.08em;font-weight:800}.voice-enabled{display:flex;align-items:center;gap:5px;color:#c4e7c4;font-size:10px;white-space:nowrap}.voice-enabled input{width:auto;margin:0;accent-color:var(--lime)}.voice-hint{margin:12px 0 0;padding:10px 12px;background:#152b24;border-radius:9px;color:#c4e7c4;font-size:12px}
 .form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}.field{display:grid;gap:5px;color:var(--muted);font-size:11px}.field input{width:130px}.field.token{min-width:min(100%,340px);flex:1}.field.token input{width:100%}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.toolbar p{display:flex;gap:8px;margin:0;flex-wrap:wrap}.checkrow{display:flex;align-items:center;gap:9px;color:#c9d6e5}.checkrow input{accent-color:var(--lime)}.don-tortu-toggle{min-width:210px;color:#fff;font-weight:800;border-color:transparent}.don-tortu-toggle.off{background:#a8323c}.don-tortu-toggle.on{background:#238447}.vs-config-list,.gift-catalog-list,.race-list,.team-catalog-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:7px;margin-top:12px;max-height:320px;overflow:auto;padding-right:4px}.vs-config-list .checkrow,.gift-catalog-list .checkrow,.race-row,.team-row{padding:9px 10px;border:1px solid #25374a;border-radius:8px;background:#0a111c;font-size:12px}.vs-config-list .vs-checkrow{justify-content:space-between;gap:8px}.vs-checkrow label{display:flex;align-items:center;gap:5px;white-space:nowrap}.race-row,.team-row{display:flex;align-items:center;gap:9px}.race-row input{accent-color:var(--lime)}.team-flag{min-width:42px;text-align:center;font-size:18px}.message{min-height:24px;color:var(--cyan);font-size:12px;margin:14px 0 0}.pre{padding:11px;border:1px solid #25374a;border-radius:9px;background:#0a111c;color:#b9c9dc;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 ui-monospace,Consolas,monospace;max-height:230px;overflow:auto}.country-box{margin-top:12px}.motor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.motor-card{border:1px solid #25374a;border-radius:11px;background:#0a111c;padding:12px}.motor-card h3{margin:0 0 8px;font-size:13px}.motor-card .meter{height:8px;background:#1a2938;border-radius:8px;overflow:hidden;margin:8px 0}.motor-card .meter i{display:block;height:100%;background:linear-gradient(90deg,#62e6ff,#a4f36d)}.motor-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;color:var(--muted);font-size:11px}.motor-values b{color:var(--text);font-weight:700}.unit-empty{padding:14px;border:1px dashed #29465b;border-radius:10px;color:var(--muted)}.server-footer{display:flex;justify-content:space-between;gap:12px;color:#657b94;font-size:10px;padding:18px 0}
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-user{display:flex;align-items:center;gap:8px;min-width:0}.event-user-label{min-width:0;overflow-wrap:anywhere}.event-avatar{flex:none;width:32px;height:32px;border:1px solid #456079;border-radius:50%;object-fit:cover;background:#25374a}.event-avatar-fallback{display:grid;place-items:center;color:#e4edf7;font-size:13px;font-weight:800}.event-avatar-fallback::before{content:attr(data-initial)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
 .event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
-@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
+@media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px minmax(0,1fr)}.voice-level,.voice-enabled{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
 .event-row[hidden]{display:none}</style></head>
 <body><div class="shell">
 <header class="topbar"><a class="brand" href="/backend"><span class="brandmark">NG</span><span><b>NEGOCIO</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
@@ -1197,7 +1204,7 @@ input,select{border:1px solid #31435a;background:#0a1220;color:var(--text);paddi
 <section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div></section>
 <section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
 <nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
-<button type="button" class="active" data-unit="usuarios">Usuarios</button><button type="button" data-unit="honor">Honor</button><button type="button" data-unit="eventos">Eventos</button><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="narrador">Narrador</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
+<button type="button" class="active" data-unit="usuarios">Usuarios</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="honor">Honor</button><button type="button" data-unit="eventos">Eventos</button><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
 </nav>
 <section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><div class="form-row"><button type="button" id="donTortuToggle" class="don-tortu-toggle off" aria-pressed="false" aria-label="Don Tortu desactivado" disabled>Don Tortu: DESACTIVADO</button><span class="subtle">Verde: avatar y voz activos · Rojo: desactivados y ocultos del overlay.</span></div><p class="message" id="donTortuMessage" role="status"></p><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuarios guardados<select id="savedUsername"><option value="">Cargando usuarios guardados…</option></select></label><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form><p class="message" id="savedUsernameMessage" role="status"></p></article></section>
 <section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Negocio Honor · Cuadro de honor</h2><span class="pill">HONOR</span></header><article class="connection-card"><header><h2>Último usuario que envió un regalo</h2></header><div class="form-row"><img id="honorLastGiftAvatar" alt="" width="56" height="56" hidden><pre class="pre" id="honorLastGift">Cargando último regalo…</pre></div></article><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
@@ -1210,8 +1217,7 @@ input,select{border:1px solid #31435a;background:#0a1220;color:var(--text);paddi
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos</h2><span class="pill">VOTACIÓN</span></header><label class="checkrow"><input id="tournamentEnabled" type="checkbox"> Registrar votos de comentarios reales</label><div class="toolbar"><button class="primary" id="saveTournament">Guardar configuración</button></div></section>
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos · crear lista de carreras</h2><span class="pill">POPULAR Y NO POPULAR</span></header><p class="subtle">Olimpia–Cerro y Barcelona–Real Madrid empiezan habilitados y populares. Se repiten los VS populares y al final se agrega un no popular habilitado. Al completar toda la lista, se carga la siguiente tanda con el próximo no popular. Cada casilla se marca al terminar la carrera por inactividad.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS y popularidad</button></div><h3>Lista de carreras</h3><div id="raceList" class="race-list"><div class="unit-empty">Cargando lista…</div></div><p class="message" id="vsConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
-<section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><div class="form-row"><label class="field">No repetir una frase durante (minutos)<input id="voiceCooldownMinutes" type="number" min="1" max="1440" step="1" value="1"></label><button class="primary" id="saveVoiceConfig">Guardar ajustes de voz</button></div><p class="voice-hint" id="voicePhraseRule">Las frases pronunciadas se comparan con el diccionario temporal antes de hablar.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
-<section class="panel business-panel" data-units="narrador voz"><header><h2><span class="icon">🎙</span> Narrador</h2><span class="pill">PROTOCOLO</span></header><p class="subtle">Prioridad actual de narración y reglas de interrupción de voz.</p><ol class="voice-order" id="narratorOrder"></ol><p class="message" id="narratorError" role="status"></p></section>
+<section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off · Narrador</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Voz alegre, con prioridad más baja primero; los regalos interrumpen mensajes de menor prioridad. Activa o desactiva cada tipo de narración.</p><div class="form-row"><label class="field">No repetir una frase durante (minutos)<input id="voiceCooldownMinutes" type="number" min="1" max="1440" step="1" value="1"></label><button class="primary" id="saveVoiceConfig">Guardar ajustes de voz</button></div><p class="voice-hint" id="voicePhraseRule">Las frases pronunciadas se comparan con el diccionario temporal antes de hablar.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece con una voz alegre. La narración respeta las prioridades activas y se vacía al terminar cada partido.</p><p class="message" id="voiceError" role="status"></p></section>
 <section class="panel business-panel" data-units="acciones"><header><h2><span class="icon">🛠</span> CTAs / Acciones</h2><span class="pill">OPERADOR</span></header><p class="subtle">Herramientas de operación del live y la sesión.</p><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><button data-command="refresh">Recargar overlay</button><button id="logout">Cerrar sesión protegida</button></div></section>
 <p class="message" id="message" role="status"></p>
 </main><footer class="server-footer"><span>NEGOCIO GAME SERVER</span><span>Control local · datos en tiempo real</span></footer></div>
@@ -1292,7 +1298,7 @@ function showUnit(unit,scrollToPanel=false){
  panels.forEach(panel=>{panel.hidden=!panel.dataset.units.split(/\\s+/).includes(unit)});
  if(scrollToPanel)panels.find(panel=>panel.dataset.units.split(/\\s+/).includes(unit))?.scrollIntoView({behavior:'smooth',block:'start'});
  if(unit==='logs')loadTechnicalLogs();
- if(unit==='usuarios')loadVoice();
+ if(unit==='voz')loadVoice();
  if(unit==='regalos'||unit==='turbo-regalos')loadGiftConfig();
  if(unit==='torneos'){loadVsConfig();loadTeamCatalog()}
 }
@@ -1302,7 +1308,7 @@ $('#businessUnits').addEventListener('click',event=>{
  event.preventDefault();
  const unit=button.dataset.unit;
  showUnit(unit,true);
- if(unit==='voz'||unit==='narrador')loadVoice();
+ if(unit==='voz')loadVoice();
  if(unit==='honor')loadHonorBoard();
 });
 showUnit('usuarios');
@@ -1339,9 +1345,11 @@ $('#saveVsConfig').onclick=async()=>{
 };
 $('#saveVoiceConfig').onclick=async()=>{
  const repeatCooldownMinutes=Number($('#voiceCooldownMinutes').value);
+ const enabledLevels=Object.fromEntries(Array.from(document.querySelectorAll('#voiceOrder input[data-voice-level]'),input=>[input.dataset.voiceLevel,input.checked]));
  try{
-  const config=await admin('/api/admin/voice-config',{repeatCooldownMinutes});
+  const config=await admin('/api/admin/voice-config',{repeatCooldownMinutes,enabledLevels});
   $('#voiceCooldownMinutes').value=config.repeatCooldownMinutes;
+  document.querySelectorAll('#voiceOrder input[data-voice-level]').forEach(input=>{input.checked=config.enabledLevels[input.dataset.voiceLevel]!==false});
   $('#voicePhraseRule').textContent='Las frases no se repiten durante '+config.repeatCooldownMinutes+' minuto'+(config.repeatCooldownMinutes===1?'':'s')+'.';
   $('#voiceError').textContent='Ajustes de voz guardados.';
  }catch(error){$('#voiceError').textContent=error.message}
@@ -1350,20 +1358,22 @@ $('#reset').onclick=async()=>{if(!confirm('¿Reiniciar el cronómetro y el conta
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=async()=>{try{await admin('/api/admin/game-command',{command:b.dataset.command});msg('Comando enviado')}catch(e){msg(e.message)}});
 const voiceInfo={gift:['Regalo','Agradece el regalo y activa la alerta alegre desde 1 diamante.','🎁'],move:['Cambio de equipo','Anuncia cuando alguien se une o cambia de equipo.','🔁'],chat:['Comentario','Lee el comentario real del usuario.','💬'],welcome:['Ingreso al live','Da la bienvenida a quien entra.','👋'],action:['Acciones','Agradece likes, seguidores y compartidos.','⚡'],match:['Relato de carrera','Informa posiciones, metros restantes y llegada a la meta.','🏁']};
 function renderVoice(data){
- ['voiceOrder','narratorOrder'].forEach(id=>{
-  const order=$('#'+id);if(!order)return;order.replaceChildren();
-  data.levels.slice().sort((a,b)=>a.priority-b.priority).forEach(level=>{
+ const order=$('#voiceOrder');if(!order)return;order.replaceChildren();
+ data.levels.slice().sort((a,b)=>a.priority-b.priority).forEach(level=>{
    const info=voiceInfo[level.id]||[level.id,'Evento de voz configurado.','•'],item=document.createElement('li'),rank=document.createElement('span'),copy=document.createElement('div'),title=document.createElement('b'),desc=document.createElement('p'),phrases=document.createElement('small'),badge=document.createElement('span');
    item.className='voice-card';rank.className='voice-rank';rank.textContent=info[2];copy.className='voice-copy';title.textContent=info[0];desc.textContent=info[1];
    const say=typeof level.say==='string'?[level.say]:Object.entries(level.say||{}).map(([key,value])=>key+': '+value);
    phrases.textContent=say.join(' · ');badge.className='voice-level';badge.textContent='PRIORIDAD '+String(level.priority).padStart(2,'0')+(level.interrupt?' · INTERRUMPE':'');
-   copy.append(title,desc,phrases);item.append(rank,copy,badge);order.append(item);
-  });
+   const toggle=document.createElement('label'),checkbox=document.createElement('input');
+   toggle.className='voice-enabled';checkbox.type='checkbox';checkbox.dataset.voiceLevel=level.id;checkbox.checked=!data.enabledLevels||data.enabledLevels[level.id]!==false;
+   checkbox.setAttribute('aria-label',(checkbox.checked?'Desactivar ':'Activar ')+info[0]);toggle.append(checkbox,document.createTextNode('Activo'));
+   checkbox.addEventListener('change',()=>checkbox.setAttribute('aria-label',(checkbox.checked?'Desactivar ':'Activar ')+info[0]));
+   copy.append(title,desc,phrases);item.append(rank,copy,badge,toggle);order.append(item);
  });
 }
 async function loadVoice(){
- try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);renderDonTortuToggle(data.donTortuEnabled===true);$('#voiceCooldownMinutes').value=data.repeatCooldownMinutes;$('#voicePhraseRule').textContent='Las frases no se repiten durante '+data.repeatCooldownMinutes+' minuto'+(data.repeatCooldownMinutes===1?'':'s')+'.';$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.';$('#narratorError').textContent='Prioridades cargadas desde el servidor.'}
- catch(e){$('#voiceError').textContent=e.message;$('#narratorError').textContent=e.message}
+ try{const r=await fetch('/api/voice-priority',{cache:'no-store'});if(!r.ok)throw Error('No se pudo cargar el protocolo de voz ('+r.status+').');const data=await r.json();if(!Array.isArray(data.levels))throw Error('La configuración de voz no tiene niveles válidos.');renderVoice(data);renderDonTortuToggle(data.donTortuEnabled===true);$('#voiceCooldownMinutes').value=data.repeatCooldownMinutes;$('#voicePhraseRule').textContent='Las frases no se repiten durante '+data.repeatCooldownMinutes+' minuto'+(data.repeatCooldownMinutes===1?'':'s')+'.';$('#voiceError').textContent='Configuración recibida del servidor · meta a '+data.trackMeters+' m.'}
+ catch(e){$('#voiceError').textContent=e.message}
 }
 let donTortuEnabled=false;
 function renderDonTortuToggle(enabled){
@@ -1899,6 +1909,16 @@ async function handle(req, res) {
       safeJson(res, 400, { message: 'donTortuEnabled debe ser booleano.' });
       return;
     }
+    if (body.enabledLevels !== undefined && (!body.enabledLevels || typeof body.enabledLevels !== 'object' || Array.isArray(body.enabledLevels))) {
+      safeJson(res, 400, { message: 'enabledLevels debe ser un objeto de niveles booleanos.' });
+      return;
+    }
+    if (body.enabledLevels !== undefined && Object.entries(body.enabledLevels).some(([id, enabled]) =>
+      !voicePriority.levels.some(level => level.id === id) || typeof enabled !== 'boolean'
+    )) {
+      safeJson(res, 400, { message: 'enabledLevels contiene un nivel desconocido o un estado inválido.' });
+      return;
+    }
     if (repeatCooldownMinutes !== null && (!Number.isInteger(repeatCooldownMinutes) || repeatCooldownMinutes < 1 || repeatCooldownMinutes > 1440)) {
       safeJson(res, 400, { message: 'El tiempo debe ser un número entero entre 1 y 1440 minutos.' });
       return;
@@ -1906,7 +1926,10 @@ async function handle(req, res) {
     const currentConfig = await loadVoiceConfig();
     const config = {
       repeatCooldownMinutes: repeatCooldownMinutes ?? currentConfig.repeatCooldownMinutes,
-      donTortuEnabled: body.donTortuEnabled ?? currentConfig.donTortuEnabled
+      donTortuEnabled: body.donTortuEnabled ?? currentConfig.donTortuEnabled,
+      enabledLevels: voiceConfigView({
+        enabledLevels: { ...currentConfig.enabledLevels, ...(body.enabledLevels || {}) }
+      }).enabledLevels
     };
     await setState('cluss.voice', config);
     broadcastTool('voice-config', config);

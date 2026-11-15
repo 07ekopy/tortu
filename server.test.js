@@ -62,6 +62,16 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   let now = 1000;
   const spoken = [];
   const listeners = new Map();
+  const legacyQueues = { voiceQueue: [], giftQueue: [], chatQueue: [], narratorQueue: [] };
+  const sandbox = {
+    voiceQueue: legacyQueues.voiceQueue,
+    giftQueue: legacyQueues.giftQueue,
+    chatQueue: legacyQueues.chatQueue,
+    narratorQueue: legacyQueues.narratorQueue,
+    activeVoiceRequest: { text: 'old speech' },
+    giftSpeaking: true,
+    giftSpeechGeneration: 0
+  };
   let donTortuEnabled = true;
   const window = {
     speechSynthesis: {
@@ -70,7 +80,7 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
       getVoices: () => [],
       addEventListener() {}
     },
-    liveEventMonitor: { receive(event) { return event; } },
+    liveEventMonitor: { receive(event) { return event; }, completeRound() { return 'completed'; } },
     I18N: { en: false },
     setDonTortuEnabled: enabled => { donTortuEnabled = enabled; },
     addEventListener: (type, listener) => listeners.set(type, listener)
@@ -78,9 +88,9 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   class FakeDate extends Date {
     static now() { return now; }
   }
-  runInNewContext(script, {
+  Object.assign(sandbox, {
     window,
-    T: [{ n: 'Olimpia' }, { n: 'Cerro' }],
+    T: [{ id: 'ol', n: 'Olimpia' }, { id: 'cp', n: 'Cerro' }],
     S: [{ p: 0 }, { p: 0 }],
     P: { vo: 1 },
     over: false,
@@ -93,6 +103,7 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
     clearTimeout() {},
     addEventListener() {}
   });
+  runInNewContext(script, sandbox);
   window.liveEventMonitor.receive({ type: 'gift', displayName: 'Ana', username: 'ana', giftDiamonds: 1 });
   window.liveEventMonitor.receive({ type: 'gift', displayName: 'aná', username: 'ana', giftDiamonds: 1 });
   assert.deepEqual(spoken, ['Gracias Ana por el regalo']);
@@ -106,6 +117,25 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   listeners.get('voice-config-update')({ detail: { repeatCooldownMinutes: 2, donTortuEnabled: false } });
   assert.equal(window.getVoiceMonitorState().phraseCooldownMs, 120000);
   assert.equal(donTortuEnabled, false);
+  listeners.get('voice-config-update')({ detail: { enabledLevels: { gift: false } } });
+  assert.equal(window.getVoiceMonitorState().levels.find(level => level.id === 'gift').enabled, false);
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'Beto', username: 'beto' });
+  assert.equal(spoken.length, 1);
+  listeners.get('voice-config-update')({ detail: { enabledLevels: { gift: true } } });
+  window.liveEventMonitor.receive({ type: 'gift', displayName: 'Beto', username: 'beto' });
+  window.liveEventMonitor.receive({ type: 'chat', displayName: 'Carla', username: 'carla', content: 'Hola' });
+  assert.ok(window.getVoiceMonitorState().queue.some(item => item.id === 'chat'));
+  legacyQueues.voiceQueue.push({ text: 'old voice' });
+  legacyQueues.giftQueue.push({ text: 'old gift' });
+  legacyQueues.chatQueue.push({ text: 'old chat' });
+  legacyQueues.narratorQueue.push({ text: 'old narrator' });
+  window.liveEventMonitor.completeRound('ol');
+  assert.equal(window.getVoiceMonitorState().queue.length, 0);
+  assert.match(window.getVoiceMonitorState().current, /Gana Olimpia/);
+  for (const queue of Object.values(legacyQueues)) assert.equal(queue.length, 0);
+  assert.equal(sandbox.activeVoiceRequest, null);
+  assert.equal(sandbox.giftSpeaking, false);
+  assert.equal(sandbox.giftSpeechGeneration, 1);
 });
 
 test('backend voice setting controls Don Tortu avatar and speech', () => {
@@ -653,6 +683,11 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
     const defaultConfig = await defaults.json();
     assert.equal(defaultConfig.repeatCooldownMinutes, 1);
     assert.equal(defaultConfig.donTortuEnabled, false);
+    assert.ok(Object.values(defaultConfig.enabledLevels).length > 0);
+    assert.ok(Object.values(defaultConfig.enabledLevels).every(enabled => enabled === true));
+    const savedNames = await fetch(`${baseUrl}/api/admin/usernames`, { headers });
+    const savedUsernames = (await savedNames.json()).usernames;
+    for (const username of ['radiofenica', 'reciclemaiis', 'tortulive']) assert.ok(savedUsernames.includes(username));
 
     const invalid = await fetch(`${baseUrl}/api/admin/voice-config`, {
       method: 'POST',
@@ -672,16 +707,25 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
       body: JSON.stringify({ repeatCooldownMinutes: 5, donTortuEnabled: 'false' })
     });
     assert.equal(invalidToggle.status, 400);
+    const invalidVoiceLevels = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ enabledLevels: { gift: 'false' } })
+    });
+    assert.equal(invalidVoiceLevels.status, 400);
 
     const saved = await fetch(`${baseUrl}/api/admin/voice-config`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ repeatCooldownMinutes: 5, donTortuEnabled: false })
+      body: JSON.stringify({ repeatCooldownMinutes: 5, donTortuEnabled: false, enabledLevels: { gift: false, chat: false } })
     });
     assert.equal(saved.status, 200);
     const savedConfig = await saved.json();
     assert.equal(savedConfig.repeatCooldownMinutes, 5);
     assert.equal(savedConfig.donTortuEnabled, false);
+    assert.equal(savedConfig.enabledLevels.gift, false);
+    assert.equal(savedConfig.enabledLevels.chat, false);
+    assert.equal(savedConfig.enabledLevels.move, true);
     const enabled = await fetch(`${baseUrl}/api/admin/voice-config`, {
       method: 'POST',
       headers,
@@ -699,6 +743,7 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
     const overlayVoice = await overlayConfig.json();
     assert.equal(overlayVoice.repeatCooldownMinutes, 5);
     assert.equal(overlayVoice.donTortuEnabled, true);
+    assert.equal(overlayVoice.enabledLevels.gift, false);
     const toolsResponse = await fetch(`${baseUrl}/api/game-tools/events`);
     const toolsReader = toolsResponse.body.getReader();
     const toolsDecoder = new TextDecoder();
@@ -709,6 +754,7 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
       toolsFrames += toolsDecoder.decode(value, { stream: true });
     }
     assert.match(toolsFrames, /"donTortuEnabled":true/);
+    assert.match(toolsFrames, /"gift":false/);
     await toolsReader.cancel();
   } finally {
     if (hadPreviousState) {
@@ -747,20 +793,29 @@ test('overlay retains the active VS until inactivity and resets cups only on the
     addEventListener() {},
     querySelector: () => panelBody,
   };
+  const makeToggle = () => ({
+    classList: { active: false, toggle(_name, enabled) { this.active = enabled; } },
+    addEventListener(_type, handler) { this.click = handler; },
+    setAttribute(name, value) { this[name] = value; },
+  });
+  const loopButton = makeToggle(), giftToggle = makeToggle();
   const savedStates = [];
   const window = {
-    liveEventMonitor: { completeRound() { return Promise.resolve(); } },
+    liveEventMonitor: { completeRound() { return Promise.resolve(); }, receive() {} },
+    __known: new Map([['fan', { t: 0 }]]),
     addEventListener(name, listener) { listeners.set(name, listener); },
+    persistTournamentRound() {},
   };
   let nextMatchCalls = 0;
   const context = {
     window,
     document: {
-      getElementById: id => id === 'app' ? app : null,
+      getElementById: id => id === 'app' ? app : id === 'paraguayVsLoop' ? loopButton : id === 'honorGiftToggle' ? giftToggle : null,
       querySelector: () => foot,
       createElement: () => panel,
     },
     CLASSIC_DEFS: fixtures,
+    CLASSIC_FIXTURES: fixtures.map(([a, b]) => [a, b]),
     SRV: {
       get: () => null,
       set: (key, value) => savedStates.push({ key, value }),
@@ -777,6 +832,8 @@ test('overlay retains the active VS until inactivity and resets cups only on the
     },
     brCur: () => null,
     nextMatch() { nextMatchCalls++; },
+    aplicarDuelo(ids) { context.T.forEach((team, index) => { team.id = ids[index]; }); },
+    renderTop3() {},
     reset() {},
     lowActivityFinished: false,
   };
@@ -788,14 +845,23 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   assert.deepEqual(Array.from(vs.data.raceList, item => [item.k, item.played]), [
     ['cp|ol', false], ['ucl-bc|ucl-rm', false]
   ]);
+  assert.equal(vs.data.loopEnabled, true);
+  assert.match(html, /loopButton\.id='paraguayVsLoop'/);
+  assert.match(html, /Bucle del Superclásico paraguayo/);
+  assert.equal(loopButton.classList.active, true);
+  assert.equal(giftToggle.classList.active, true);
   const currentKey = vs.data.cur;
+  vs.data.loopEnabled = false;
   listeners.get('vs-config-update')({ detail: { enabledKeys: ['ucl-bc|ucl-rm'] } });
   assert.equal(vs.curVS().k, currentKey);
   assert.equal(context.P.cl['ucl-bc|ucl-rm']['ucl-bc'], 4);
 
   context.lowActivityFinished = true;
+  window.liveEventMonitor.receive({ type: 'chat', username: 'fan' });
   window.liveEventMonitor.completeRound('ol');
   assert.equal(vs.data.cur, 'ucl-bc|ucl-rm');
+  assert.equal(vs.data.st['cp|ol'].ev, 1);
+  assert.equal(vs.data.st['cp|ol'].eventsByTeam.ol, 1);
   assert.equal(context.P.cl['ucl-bc|ucl-rm']['ucl-bc'], 4);
   context.nextMatch();
   assert.equal(nextMatchCalls, 1);
@@ -804,6 +870,19 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   assert.deepEqual(context.P.cp, { ol: 7 });
   assert.equal(JSON.stringify(context.P.br.duel), JSON.stringify(['ucl-bc', 'ucl-rm']));
   assert.ok(savedStates.some(item => item.key === 'cluss.vs'));
+  context.P.cl['cp|ol'] = { ol: 1 };
+  vs.addCup('cp|ol', 'ol');
+  assert.equal(vs.data.st['cp|ol'].cups.ol, 1);
+  assert.ok(savedStates.some(item => item.key === 'cluss.vs' && item.value.st['cp|ol'].cups.ol === 1));
+  loopButton.click();
+  assert.equal(vs.data.loopEnabled, true);
+  assert.deepEqual(Array.from(context.T, team => team.id), ['ol', 'cp']);
+  loopButton.click();
+  assert.equal(vs.data.loopEnabled, false);
+  assert.deepEqual(Array.from(context.T, team => team.id), ['ucl-bc', 'ucl-rm']);
+  giftToggle.click();
+  assert.equal(vs.data.showHonorGifts, false);
+  assert.ok(savedStates.some(item => item.key === 'cluss.vs' && item.value.showHonorGifts === false));
 
   listeners.get('vs-config-update')({ detail: {
     enabledKeys: ['cp|ol', 'ucl-bc|ucl-rm', 'lib-boc|lib-riv', 'cl-cel|cl-ran'],
@@ -851,6 +930,7 @@ test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts
   let honorMarkup = '';
   let clickHandler;
   const count = { textContent: '' };
+  const eventRate = { textContent: '', setAttribute(name, value) { this[name] = value; } };
   const counter = {
     addEventListener(_type, handler) { clickHandler = handler; },
     setAttribute() {},
@@ -867,7 +947,7 @@ test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts
     window: { addEventListener() {}, dispatchEvent() {} },
     CustomEvent: function CustomEvent() {},
     document: {
-      querySelector: selector => selector === '.side' ? side : selector === '#giftCounter' ? counter : selector === '#giftCount' ? count : null,
+      querySelector: selector => selector === '.side' ? side : selector === '#giftCounter' ? counter : selector === '#giftCount' ? count : selector === '#eventRate' ? eventRate : null,
       createElement: () => box,
     },
     setInterval: () => 1,
@@ -915,6 +995,11 @@ test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts
   assert.equal(context.window.HonorBoard.onGift({
     type: 'gift', eventId: 'gift-1', username: 'ana', giftName: 'Galaxy', activityCount: 3
   }), false);
+  context.window.HonorBoard.setGiftDisplay(false);
+  assert.match(honorMarkup, /https:\/\/example\.test\/ana\.jpg/);
+  assert.doesNotMatch(honorMarkup, /Galaxy|https:\/\/example\.test\/galaxy\.png/);
+  context.window.HonorBoard.setGiftDisplay(true);
+  assert.match(honorMarkup, /Galaxy/);
   assert.equal(context.window.HonorBoard.onGift({
     type: 'gift', eventId: 'gift-disabled', username: 'ana', giftName: 'Diamond', activityCount: 1
   }), false);
@@ -925,9 +1010,30 @@ test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts
   context.window.HonorBoard.startRace('next-race');
   assert.match(honorMarkup, /🌹/);
   assert.equal(count.textContent, '2');
+  context.window.HonorBoard.setCatalog({ catalog: [
+    { key: 'rose', name: 'Rosa', enabled: true, emoji: '🌹', imageUrl: 'https://cdn.example.test/rose.png' },
+    { key: 'heart', name: 'Corazón', enabled: true, emoji: '💖', imageUrl: 'https://cdn.example.test/heart.png' }
+  ], rotationSeconds: 10 });
+  context.window.HonorBoard.setEventsPerMinute(1000);
+  assert.doesNotMatch(honorMarkup, /cdn\.example\.test\/rose\.png/);
+  context.window.HonorBoard.setEventsPerMinute(1001);
+  assert.match(honorMarkup, /cdn\.example\.test\/rose\.png/);
+  assert.equal(eventRate.textContent, '1001/min');
+  context.handleLiveEntry({ type: 'chat', username: 'fan' });
+  assert.equal(eventRate.textContent, '1002/min');
+  context.window.HonorBoard.onGift({ type: 'gift', username: 'ana', giftName: 'Rose', eventId: 'rate-gift', profilePictureUrl: 'https://example.test/ana.jpg' });
+  context.window.HonorBoard.setEventsPerMinute(0);
+  assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /https:\/\/example\.test\/ana\.jpg/);
+  context.window.HonorBoard.startRace('idle-after-gift');
+  assert.doesNotMatch(honorMarkup, /cdn\.example\.test\/rose\.png/);
+  context.window.HonorBoard.setGiftDisplay(false);
+  assert.match(honorMarkup, /hn-flower/);
+  assert.doesNotMatch(honorMarkup, /hn-aura/);
   await Promise.resolve();
   assert.equal(fetchCalls, 1, 'only catalog bootstrap fetches from the server; emulated gifts stay local');
   assert.match(html, /id="giftCounter"/);
+  assert.doesNotMatch(html, /<button id="giftCounter"[^>]*>\s*<b/);
   assert.match(html, /window\.HonorBoard/);
 });
 
@@ -1098,7 +1204,7 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     filter();
     assert.equal(eventEmpty.hidden, false);
     assert.match(eventEmpty.textContent, /No hay eventos/);
-    assert.match(html, /<button type="button" class="active" data-unit="usuarios">Usuarios<\/button><button type="button" data-unit="honor">Honor<\/button><button type="button" data-unit="eventos">Eventos<\/button>/);
+    assert.match(html, /<button type="button" class="active" data-unit="usuarios">Usuarios<\/button><button type="button" data-unit="voz">Voz en off<\/button><button type="button" data-unit="honor">Honor<\/button><button type="button" data-unit="eventos">Eventos<\/button>/);
     const userPanelIndex = html.indexOf('<section class="panel business-panel" data-units="usuarios">');
     const honorPanelIndex = html.indexOf('<section class="panel business-panel" data-units="honor">');
     const eventsPanelIndex = html.indexOf('<section class="panel business-panel" data-units="eventos">');
@@ -1116,7 +1222,7 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     assert.match(script, /if\(selected\)usernameInput\.value=selected/);
     assert.match(script, /savedUsernameSelect\.addEventListener\('change',fillUsernameFromSaved\)/);
     assert.match(script, /savedUsernameSelect\.addEventListener\('input',fillUsernameFromSaved\)/);
-    for (const unit of ['eventos', 'usuarios', 'regalos', 'torneos', 'estadisticas', 'motor', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
+    for (const unit of ['eventos', 'usuarios', 'regalos', 'torneos', 'estadisticas', 'motor', 'turbo-regalos', 'voz', 'honor', 'acciones', 'logs']) {
       assert.match(html, new RegExp(`data-unit="${unit}"`));
     }
     assert.doesNotMatch(html, /data-unit="(?:equipos|turbo-equipos)"/);
@@ -1252,9 +1358,11 @@ test('overlay keeps its race design and opens monitor tabs matching the backend 
   assert.match(html, /<main id="app">/);
   assert.match(html, /id="bMonitor"/);
   assert.match(html, /aria-label="Monitor por unidad de negocio"/);
-  for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones']) {
+  for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'acciones']) {
     assert.match(html, new RegExp(`data-tab="${unit}"`));
   }
+  assert.doesNotMatch(html, /data-tab="narrador"/);
+  assert.match(html, /data-tab="usuarios"[^>]*>👤 Usuarios<\/button><button data-tab="voz"[^>]*>♫ Voz/);
   assert.match(html, /addEventListener\('motor-state'/);
 });
 
@@ -1290,6 +1398,10 @@ test('gift counter emulates a rose locally and HonorBoard receives live catalog 
   assert.match(html, /emulated:true/);
   assert.match(html, /gift-config-update/);
   assert.match(html, /window\.HonorBoard\.setTurbo\(settings\)/);
+  assert.match(html, /\.overlay-version\{[^}]*bottom:calc\(var\(--sb,0px\) \+ 22px\)/);
+  assert.match(html, /<span class="overlay-version"[^>]*>v__TORTUWORLD_PACKAGE_VERSION__<\/span><span class="event-rate" id="eventRate"/);
+  assert.match(html, /\.event-rate\{[^}]*bottom:calc\(var\(--sb,0px\) \+ 4px\)/);
+  assert.match(html, /window\.vozPrioridad\.clearLegacy\(\)/);
 });
 
 test('honor panel height aligns with the bottom of the team tap counters', () => {
@@ -1317,16 +1429,16 @@ test('honor panel height aligns with the bottom of the team tap counters', () =>
     window: { addEventListener() {} },
     requestAnimationFrame: callback => callback(),
   });
-  assert.equal(styles.get('--honor-panel-height'), '160px');
+  assert.equal(styles.get('--honor-panel-height'), '168px');
 });
 
-test('honor panel displays a pulsing rose', () => {
+test('honor panel image is smaller and does not pulse', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   assert.match(html, /const rose=\{key:'rose'/);
-  assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*animation:honorRoseBeat/);
-  assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*width:54px;height:54px/);
-  assert.match(html, /#honor \.hn-avatar\{width:56px;height:56px/);
-  assert.match(html, /@keyframes honorRoseBeat/);
+  assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*width:40px;height:40px/);
+  assert.match(html, /#honor \.hn-avatar\{width:44px;height:44px/);
+  assert.doesNotMatch(html, /honorRoseBeat/);
+  assert.doesNotMatch(html, /hn-burst|hnPop/);
   assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{#honor,#honor \*\{animation:none!important\}\}/);
 });
 
