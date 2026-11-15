@@ -3605,14 +3605,15 @@ setInterval(()=>{try{if(over||document.hidden)return;let best=null;pts.forEach((
 @keyframes hnBrillo{50%{box-shadow:0 0 22px 7px rgba(255,225,77,.85)}}
 #honor .hh{font:900 11px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
 #honor .pd{display:flex;flex-direction:column}
-#honor .sl{position:relative;display:flex;background:rgba(255,255,255,.08);min-width:0}
+#honor .sl{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;background:rgba(255,255,255,.08);min-width:0}
 #honor .sl.s1{background:rgba(255,225,77,.2)}
 #honor .av{flex:none;border-radius:50%;object-fit:cover;background:#3f2713;display:flex;align-items:center;justify-content:center;border:3px solid #c9ccd1}
 #honor .s1 .av{border-color:#ffe14d;box-shadow:0 0 10px 2px rgba(255,225,77,.75)}
 #honor .s3 .av{border-color:#d08a4a}
 #honor .sl.vac .av{opacity:.4}
-#honor .tx{flex:1;min-width:0;display:flex;flex-direction:column}
-#honor .un{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 10px/1.1 Inter,sans-serif}
+#honor .honor-avatar-column{display:flex;justify-content:center;align-items:center;min-width:0}
+#honor .honor-gifts-column{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;min-width:0;text-align:left}
+#honor .honor-gift-name{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 10px/1.1 Inter,sans-serif}
 #honor .ct{font:900 17px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
 #honor .sl.hit .av{animation:hnPop .6s ease-out}
 @keyframes hnPop{0%{transform:scale(.4)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
@@ -3636,7 +3637,6 @@ const giftIcon=gift=>{
  return icon&&/\p{Extended_Pictographic}/u.test(icon)?icon:'🎁';
 };
 const av=(url,icon)=>/^https:/.test(url||'')?`<img class="av" alt="" referrerpolicy="no-referrer" data-fallback="${esc(icon)}" src="${esc(url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'av gift-icon',textContent:this.dataset.fallback||'🎁'}))">`:`<div class="av gift-icon" aria-hidden="true">${esc(icon)}</div>`;
-const rango=n=>n>=10?['👑 LEYENDA','#ff4d6d']:n>=3?['🔥 FANÁTICO','#ff9a1f']:['⭐ HINCHA','#ffd34d'];
 const giftNameKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
 const giftKey=(name,id)=>{const key=giftNameKey(name);return['rose','rosa','rosita','tiktok-rose'].includes(key)?'rose':key||(id?'id-'+giftNameKey(id):'')};
 const defaultGiftConfig={rotationSeconds:10,catalog:[{key:'rose',name:'🌹 Rosa',value:1,enabled:true,aliases:['rose','rosa','rosita']}]};
@@ -3672,15 +3672,11 @@ function currentEntries(){
  return ordered;
 }
 function pinta(gift){
- if(!gift){pd.innerHTML='<div class="sl s1 vac"><span class="ct">No hay regalos habilitados</span></div>';return}
+ if(!gift){pd.innerHTML=`<div class="sl s1 vac"><div class="honor-avatar-column">${av('', '🎁')}</div><div class="honor-gifts-column"><span class="ct">No hay regalos habilitados</span></div></div>`;return}
  const contributor=[...C.values()].filter(item=>item.giftKey===gift.key).sort((a,b)=>b.n-a.n)[0]||null;
- const tm=contributor&&contributor.t>=0?T[contributor.t]:null,col=tm?(tm.c==='#f1f1f1'?'#e5e5e5':tm.c):'#ffe14d';
- const rg=contributor?rango(contributor.n):['🎁 REGALO HABILITADO','#ffd34d'];
  const value=Number(gift.value)>0?Number(gift.value).toLocaleString('es')+' 🪙':'valor sin informar';
- let fl='';try{if(tm)fl=`<svg class="hflag" viewBox="0 0 40 26" aria-hidden="true">${flag(tm.id,0,0,40,26)}</svg>`}catch(x){}
- const name=contributor?`@${esc(contributor.user)}`:'Catálogo de regalos';
- const count=contributor?` ×${contributor.n}`:'';
- pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(contributor&&contributor.url,giftIcon(gift))}</div><div class="tx"><span class="un">${name}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift.name)} · ${esc(value)}${count}</span></div></div>`}
+ const count=contributor?` ×${contributor.n}`:' · Habilitado';
+ pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:#ffe14d"><div class="honor-avatar-column"><div class="avw">${av(contributor&&contributor.url,giftIcon(gift))}</div></div><div class="honor-gifts-column"><span class="honor-gift-name">${esc(gift.name)}</span><span class="ct">${esc(value)}${count}</span></div></div>`}
 function refreshContributorAvatar(e){
  const user=String(e.username||'').trim(),key=user.toLowerCase();
  if(!user)return;
@@ -3706,7 +3702,6 @@ function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const url=avatarFor(e,u.toLowerCase());
  const key=u.toLowerCase()+'|'+gift.key,c=C.get(key)||{key,user:u,giftKey:gift.key,giftName:gift.name,n:0,url:'',t:-1};
  c.n+=n;if(url)c.url=url;c.giftName=gift.name;c.giftValue=gift.value;
- let tt=-1;try{tt=recentChatTeam(u.toLowerCase())}catch(x){}if(tt>=0)c.t=tt;
  C.set(key,c);const items=currentEntries();
  if(items[cursor]&&items[cursor].key===gift.key){hit=key;pinta(gift);hit=''}}
 const _h=handleLiveEntry;
@@ -4540,10 +4535,13 @@ setInterval(ajusta,500);ajusta();
 #copas.cp2 .cc-cr,#copas.cp2 .cc.p2 .cc-cr{left:auto;right:-5px;top:-13px;font-size:24px;transform:rotate(14deg);animation:ccBob2 1.6s ease-in-out infinite}
 @keyframes ccBob2{50%{transform:rotate(14deg) translateY(-3px)}}</style>
 <style id="honor-gami">
-#honor .sl.gm{position:relative;gap:2px!important;padding:0 0 4px!important;overflow:visible;border:2px solid var(--tc);background:linear-gradient(rgba(255,255,255,.1),rgba(0,0,0,.25))!important;box-shadow:0 0 10px 1px var(--tc)}
-#honor .hflag{display:block;width:100%;height:38px;border-radius:8px 8px 0 0;opacity:.95}
-#honor .sl.gm .avw{margin-top:-20px;z-index:2}
+#honor .sl.gm{position:relative;display:grid!important;grid-template-columns:52px minmax(0,1fr)!important;align-items:center!important;gap:4px!important;padding:4px!important;overflow:hidden;border:2px solid #ffe14d;background:linear-gradient(rgba(255,255,255,.1),rgba(0,0,0,.25))!important;box-shadow:0 0 10px 1px #ffe14d}
+#honor .sl.gm .avw{margin:0!important;z-index:2;display:flex;justify-content:center;align-items:center}
 #honor .sl.gm .av,#honor .sl.gm.s1 .av{width:46px!important;height:46px!important;border:3px solid var(--tc)!important;box-shadow:0 0 0 2px #fff,0 0 12px 3px var(--tc)!important}
+#honor .honor-gifts-column{gap:3px}
+#honor .honor-gift-name{font-size:10px;line-height:1.1}
+#honor .sl.gm .ct{font-size:11px!important;line-height:1.1;white-space:normal}
+#honor .sl.gm .hflag{display:none!important}
 #honor .sl.gm .cr{left:50%!important;top:-14px!important;transform:translateX(-50%) rotate(-10deg);font-size:20px!important;z-index:4}
 #honor .sl.gm .cl{max-width:100%;padding:0 5px;border-radius:7px;background:var(--tc);color:#111;font:900 9px/14px Inter,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #honor .sl.gm .rg{padding:0 5px;border-radius:7px;border:1.5px solid var(--rc);color:var(--rc);background:rgba(0,0,0,.55);font:900 8px/12px Inter,sans-serif;white-space:nowrap}

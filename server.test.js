@@ -754,6 +754,10 @@ test('gift honor clears the avatar on race start and displays the selected gift 
   runInNewContext(script, context);
 
   assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  assert.match(honorMarkup, /class="honor-avatar-column"/);
+  assert.match(honorMarkup, /class="honor-gifts-column"/);
+  assert.match(honorMarkup, /Diamante/);
+  assert.doesNotMatch(honorMarkup, /@ana/);
   assert.doesNotMatch(honorMarkup, /—/);
   context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', giftName: 'Diamond', activityCount: 1 });
   assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
@@ -765,7 +769,7 @@ test('gift honor clears the avatar on race start and displays the selected gift 
   });
   assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
   context.reset();
-  assert.match(honorMarkup, /Catálogo de regalos/);
+  assert.match(honorMarkup, /Habilitado/);
   assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
   assert.doesNotMatch(honorMarkup, /@ana/);
   assert.match(html, /class="av gift-icon"/);
@@ -809,6 +813,7 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.ok(script);
     assert.doesNotThrow(() => new Function(script));
     assert.match(html, /id="eventList"/);
+    assert.match(html, /id="applyEventFilters"/);
     assert.match(html, /id="copyEvents"/);
     assert.match(html, /ÚLTIMOS 50/);
     assert.match(html, /<aside class="event-filters" aria-label="Filtrar eventos">/);
@@ -818,6 +823,56 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.match(script, /while\(list\.children\.length>50\)/);
     assert.match(script, /navigator\.clipboard\.writeText\(text\)/);
     assert.match(script, /row\.dataset\.eventType=entry\.type/);
+    const renderEventCode = script.match(/function renderLiveEvent\(entry\)\{[\s\S]*?\n\}/)?.[0];
+    assert.ok(renderEventCode);
+    const eventRowsForRender = [];
+    const createElement = tagName => ({
+      tagName: tagName.toUpperCase(),
+      dataset: {},
+      children: [],
+      append(...children) { this.children.push(...children); },
+      setAttribute(name, value) { this[name] = value; }
+    });
+    const eventListForRender = {
+      children: eventRowsForRender,
+      prepend(row) { eventRowsForRender.unshift(row); },
+      get lastElementChild() { return eventRowsForRender[eventRowsForRender.length - 1]; }
+    };
+    const renderEvent = new Function(
+      'document', '$', 'eventLabels', 'eventDetail', 'applyEventFilters',
+      `${renderEventCode}; return renderLiveEvent;`
+    )(
+      { createElement },
+      selector => selector === '#eventList' ? eventListForRender : null,
+      { gift: 'Regalo', chat: 'Comentario' },
+      () => 'Detalle',
+      () => {}
+    );
+    renderEvent({
+      type: 'gift',
+      username: 'ana',
+      displayName: 'Ana',
+      profilePictureUrl: 'https://example.test/ana.jpg',
+      receivedAt: Date.now()
+    });
+    const photoUser = eventRowsForRender[0].children[2];
+    assert.equal(photoUser.children[0].tagName, 'IMG');
+    assert.equal(photoUser.children[0].src, 'https://example.test/ana.jpg');
+    assert.equal(photoUser.children[1].textContent, '@ana');
+    renderEvent({ type: 'chat', username: 'luz', displayName: 'Luz', profilePictureUrl: 'javascript:alert(1)' });
+    const fallbackUser = eventRowsForRender[0].children[2];
+    assert.equal(fallbackUser.children[0].className, 'event-avatar event-avatar-fallback');
+    assert.equal(fallbackUser.children[0].dataset.initial, 'L');
+    const submitCode = script.match(/\$\('#eventFilterForm'\)\.addEventListener\('submit',event=>\{[^}]*\}\);/)?.[0];
+    assert.ok(submitCode);
+    let submitHandler, filtersApplied = false, submitPrevented = false;
+    new Function('applyEventFilters', '$', submitCode)(
+      () => { filtersApplied = true; },
+      () => ({ addEventListener(_type, handler) { submitHandler = handler; } })
+    );
+    submitHandler({ preventDefault() { submitPrevented = true; } });
+    assert.equal(submitPrevented, true);
+    assert.equal(filtersApplied, true);
     const filterCode = script.match(/function applyEventFilters\(\)\{[\s\S]*?\n\}/)?.[0];
     assert.ok(filterCode);
     const filterInputs = ['all', 'member', 'chat', 'like', 'follow', 'share', 'gift'].map(type => ({
@@ -1052,13 +1107,15 @@ test('honor rotates only enabled gifts at the configured interval', () => {
   context.handleLiveEntry({ type: 'gift', username: 'luz', giftName: 'Heart', activityCount: 2 });
   assert.match(honorMarkup, /Cohete/);
   intervals[1]();
-  assert.match(honorMarkup, /@ana/);
-  assert.match(honorMarkup, /Rosita · 1 🪙 ×1/);
+  assert.doesNotMatch(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /Rosita/);
+  assert.match(honorMarkup, /1 🪙 ×1/);
   intervals[1]();
   assert.match(honorMarkup, /Diamante/);
   intervals[1]();
-  assert.match(honorMarkup, /@luz/);
-  assert.match(honorMarkup, /Corazón · 100 🪙 ×2/);
+  assert.doesNotMatch(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /Corazón/);
+  assert.match(honorMarkup, /100 🪙 ×2/);
   context.handleLiveEntry({ type: 'gift', username: 'sol', giftName: 'Star', activityCount: 1 });
   assert.match(honorMarkup, /Corazón/);
 
@@ -1068,7 +1125,9 @@ test('honor rotates only enabled gifts at the configured interval', () => {
       { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
     ]
   } });
-  assert.match(honorMarkup, /@ana/);
+  assert.doesNotMatch(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /Rosita/);
+  assert.match(honorMarkup, /1 🪙 ×1/);
 
   eventListeners['gift-config-update']({ detail: {
     rotationSeconds: 1,
