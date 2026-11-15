@@ -73,7 +73,11 @@ const DEFAULT_GIFT_CATALOG = [
   { key: 'fantasy-castle', name: '🏰 Castillo de fantasía', value: 20000, enabled: false, aliases: ['fantasy castle', 'castillo de fantasia'] },
   { key: 'lion', name: '🦁 León', value: 29999, enabled: false, aliases: ['lion', 'leon'] },
   { key: 'tiktok-universe', name: '🪐 Universo TikTok', value: 44999, enabled: false, aliases: ['tiktok universe', 'universo tiktok'] }
-].map(item => ({ ...item, enabled: true }));
+].map(item => ({
+  ...item,
+  icon: [...new Intl.Segmenter('es', { granularity: 'grapheme' }).segment(item.name)][0]?.segment || '🎁',
+  enabled: true
+}));
 const DEFAULT_VS = [
   { k: 'cp|ol', label: 'OLIMPIA vs CERRO', on: true, popular: true },
   { k: 'ucl-bc|ucl-rm', label: 'BARCELONA vs REAL MADRID', on: true, popular: true },
@@ -120,7 +124,7 @@ const TEAM_FLAGS = {
 };
 const DEFAULT_TEAM_CATALOG = [...new Set(DEFAULT_VS.flatMap(item => item.k.split('|')))]
   .map(id => ({ id, name: TEAM_NAMES[id] || id.toUpperCase(), flag: TEAM_FLAGS[id] || '🏳️' }));
-const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|voice|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
+const ALLOWED_STATE_KEY = /^cluss\.(?:v1|torneoLock|lang|crest\.[\w-]+|vs|gifts|honorLastGift|voice|stats|libreVotes|chatArchive|log\.[\w.-]+)$/;
 
 const clients = new Set();
 const toolClients = new Set();
@@ -157,6 +161,7 @@ let settings = {
 let overlayActive = false;
 let motorTelemetry = null;
 let giftCatalogConfig = giftConfigView(null);
+let latestHonorGift = null;
 
 function normalizeUsername(value) {
   return String(value || '').trim().replace(/@/g, '').replace(/\s+/g, '');
@@ -211,6 +216,11 @@ function giftCatalogKey(name, giftId) {
   return key || (giftId ? `id-${giftNameKey(giftId)}` : '');
 }
 
+function giftIcon(value) {
+  const segment = [...new Intl.Segmenter('es', { granularity: 'grapheme' }).segment(String(value || '').trim())][0]?.segment;
+  return segment && /\p{Extended_Pictographic}/u.test(segment) ? segment : '🎁';
+}
+
 function giftConfigView(value) {
   const current = value?.v === DEFAULT_GIFT_CONFIG_VERSION && Array.isArray(value.catalog);
   const migrating = value?.v === 1 && Array.isArray(value.catalog);
@@ -224,6 +234,7 @@ function giftConfigView(value) {
     stored.set(key, {
       key,
       name,
+      icon: giftIcon(item.icon || name),
       value: Number.isFinite(itemValue) ? Math.min(1000000, Math.max(0, Math.floor(itemValue))) : 0,
       enabled: migrating || item.enabled === true,
       aliases: Array.isArray(item.aliases)
@@ -249,6 +260,25 @@ function giftConfigView(value) {
     rotationSeconds: Number.isInteger(rotation) ? Math.min(3600, Math.max(1, rotation)) : 10,
     catalog
   };
+}
+
+let honorGiftUpdateQueue = Promise.resolve();
+function rememberLatestHonorGift(entry) {
+  const gift = giftCatalogConfig.catalog.find(item => item.key === giftCatalogKey(entry.giftName, entry.giftId));
+  latestHonorGift = {
+    username: entry.username,
+    displayName: entry.displayName,
+    avatarUrl: entry.profilePictureUrl,
+    giftKey: gift?.key || giftCatalogKey(entry.giftName, entry.giftId),
+    giftName: entry.giftName,
+    giftIcon: gift?.icon || giftIcon(entry.giftName),
+    giftDiamonds: entry.giftDiamonds,
+    activityCount: entry.activityCount,
+    receivedAt: entry.receivedAt
+  };
+  const saved = latestHonorGift;
+  honorGiftUpdateQueue = honorGiftUpdateQueue.catch(() => {}).then(() => setState('cluss.honorLastGift', saved));
+  return honorGiftUpdateQueue;
 }
 
 function eventUser(data) {
@@ -836,6 +866,9 @@ function handleTikTokEvent(type, raw) {
   }
   const receivedAt = Date.now();
   entry.receivedAt = receivedAt;
+  if (type === 'gift') {
+    void rememberLatestHonorGift(entry).catch(error => recordTechnicalLog('error', `No se pudo guardar el último regalo del cuadro de honor: ${error.message}`));
+  }
   broadcastSse(clients, 'update', { entry });
   void appendRecords('user-events', [{
     u: entry.username,
@@ -1062,7 +1095,7 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🏆</span> Torneos · crear lista de carreras</h2><span class="pill">POPULAR Y NO POPULAR</span></header><p class="subtle">Olimpia–Cerro y Barcelona–Real Madrid empiezan habilitados y populares. Se repiten los VS populares y al final se agrega un no popular habilitado. Al completar toda la lista, se carga la siguiente tanda con el próximo no popular. Cada casilla se marca al terminar la carrera por inactividad.</p><div id="vsConfigList" class="vs-config-list"><div class="unit-empty">Cargando VS…</div></div><div class="toolbar"><button class="primary" id="saveVsConfig">Guardar VS y popularidad</button></div><h3>Lista de carreras</h3><div id="raceList" class="race-list"><div class="unit-empty">Cargando lista…</div></div><p class="message" id="vsConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="estadisticas"><header><h2><span class="icon">📊</span> Estadísticas por país y presencia</h2><span class="pill">LIVE DATA</span></header><pre class="pre" id="countries">Esperando datos…</pre><div class="country-box"><span class="subtle">Estado del overlay</span><pre class="pre" id="presence">Verificando clientes…</pre></div></section>
 <section class="panel business-panel" data-units="voz"><header><h2><span class="icon">♫</span> Voz en off</h2><span class="pill">PRIORIDADES EN VIVO</span></header><p class="subtle">Los números más bajos hablan primero. Un regalo interrumpe los mensajes de menor prioridad.</p><div class="form-row"><label class="field">No repetir una frase durante (minutos)<input id="voiceCooldownMinutes" type="number" min="1" max="1440" step="1" value="1"></label><button class="primary" id="saveVoiceConfig">Guardar tiempo</button></div><p class="voice-hint" id="voicePhraseRule">Las frases pronunciadas se comparan con el diccionario temporal antes de hablar.</p><ol class="voice-order" id="voiceOrder"></ol><p class="voice-hint">🎁 Cada regalo se agradece. Desde 1 diamante suena una alerta alegre. Luego: cambios de equipo → comentarios → saludos/acciones → avance y distancia a la meta.</p><p class="message" id="voiceError" role="status"></p></section>
-<section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
+<section class="panel business-panel" data-units="honor"><header><h2><span class="icon">🥇</span> Cuadro de honor</h2><span class="pill">TORNEOS</span></header><article class="connection-card"><header><h2>Último usuario que envió un regalo</h2></header><div class="form-row"><img id="honorLastGiftAvatar" alt="" width="56" height="56" hidden><pre class="pre" id="honorLastGift">Cargando último regalo…</pre></div></article><pre class="pre" id="honorBoard">Cargando resultados guardados…</pre></section>
 <section class="panel business-panel" data-units="narrador voz"><header><h2><span class="icon">🎙</span> Narrador</h2><span class="pill">PROTOCOLO</span></header><p class="subtle">Prioridad actual de narración y reglas de interrupción de voz.</p><ol class="voice-order" id="narratorOrder"></ol><p class="message" id="narratorError" role="status"></p></section>
 <section class="panel business-panel" data-units="acciones"><header><h2><span class="icon">🛠</span> CTAs / Acciones</h2><span class="pill">OPERADOR</span></header><p class="subtle">Herramientas de operación del live y la sesión.</p><div class="toolbar"><button id="reset">Reiniciar cronómetro y regalos</button><button data-command="refresh">Recargar overlay</button><button id="logout">Cerrar sesión protegida</button></div></section>
 <p class="message" id="message" role="status"></p>
@@ -1076,7 +1109,8 @@ function renderGiftConfig(config){
  config.catalog.forEach(gift=>{
   const label=document.createElement('label'),input=document.createElement('input'),name=document.createElement('span');
   label.className='checkrow';input.type='checkbox';input.dataset.giftKey=gift.key;input.checked=gift.enabled;
-  name.textContent=gift.name+' · '+(gift.value?gift.value.toLocaleString('es')+' monedas':'valor sin informar');
+  const giftName=gift.name.startsWith(gift.icon)?gift.name.slice(gift.icon.length).trim():gift.name;
+  name.textContent=gift.icon+' '+giftName+' · '+(gift.value?gift.value.toLocaleString('es')+' monedas':'valor sin informar');
   label.append(input,name);list.append(label);
  });
  $('#giftRotation').value=config.rotationSeconds;
@@ -1209,8 +1243,22 @@ async function loadVoice(){
 }
 $('#voiceToggle').onclick=()=>{showUnit('voz');loadVoice()};
 async function loadHonorBoard(){
- try{const response=await fetch('/api/state/cluss.v1',{cache:'no-store'});if(response.status===404){$('#honorBoard').textContent='Todavía no hay resultados guardados.';return}const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#honorBoard').textContent=JSON.stringify({wins:result.wins||[],cups:result.cp||{},races:result.races||0,tournamentMode:result.tournamentMode||'clasico'},null,2)}
- catch(error){$('#honorBoard').textContent=error.message}
+ try{
+  const [resultsResponse,giftResponse]=await Promise.all([
+   fetch('/api/state/cluss.v1',{cache:'no-store'}),
+   fetch('/api/honor/last-gift',{cache:'no-store'})
+  ]);
+  const giftResult=await giftResponse.json();if(!giftResponse.ok)throw Error(giftResult.message||giftResponse.status);
+  const gift=giftResult.gift,avatar=$('#honorLastGiftAvatar');
+  if(gift){
+   $('#honorLastGift').textContent=JSON.stringify({username:gift.username,displayName:gift.displayName,giftName:gift.giftName,giftIcon:gift.giftIcon,giftDiamonds:gift.giftDiamonds,activityCount:gift.activityCount,receivedAt:gift.receivedAt},null,2);
+   if(typeof gift.avatarUrl==='string'&&gift.avatarUrl.toLowerCase().startsWith('https://')){avatar.src=gift.avatarUrl;avatar.hidden=false}else{avatar.removeAttribute('src');avatar.hidden=true}
+  }else{$('#honorLastGift').textContent='Todavía no se recibió ningún regalo.';avatar.hidden=true}
+  if(resultsResponse.status===404){$('#honorBoard').textContent='Todavía no hay resultados guardados.';return}
+  const result=await resultsResponse.json();if(!resultsResponse.ok)throw Error(result.message||resultsResponse.status);
+  $('#honorBoard').textContent=JSON.stringify({wins:result.wins||[],cups:result.cp||{},races:result.races||0,tournamentMode:result.tournamentMode||'clasico'},null,2)
+ }
+ catch(error){$('#honorLastGift').textContent=error.message;$('#honorBoard').textContent=error.message}
 }
 function formatTime(ms){const seconds=Math.floor(Math.max(0,ms)/1000);return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')}
 function renderMotorTeams(teams,target){
@@ -1437,6 +1485,10 @@ async function handle(req, res) {
   }
   if (path === '/api/recent-users' && req.method === 'GET') {
     safeJson(res, 200, { users: recentUsers.slice(0, 4) });
+    return;
+  }
+  if (path === '/api/honor/last-gift' && req.method === 'GET') {
+    safeJson(res, 200, { gift: latestHonorGift });
     return;
   }
   if (path === '/api/reconnect' && req.method === 'POST') {
@@ -1782,6 +1834,8 @@ async function main() {
   await mkdir(DATA_DIR, { recursive: true });
   settings = { ...settings, ...(await loadJson(resolve(DATA_DIR, 'settings.json'), {})) };
   await loadGiftConfig();
+  const storedHonorGift = await getState('cluss.honorLastGift');
+  latestHonorGift = storedHonorGift.found ? storedHonorGift.value : null;
   if (Array.isArray(settings.recentUsers)) recentUsers.push(...settings.recentUsers.slice(0, 4));
   settings.countryStats ||= Object.fromEntries([...COUNTRIES.map(country => country.code), 'sin-pais'].map(code => [code, { comments: 0, cups: 0 }]));
   for (const country of COUNTRIES) {

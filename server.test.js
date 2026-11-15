@@ -350,6 +350,8 @@ test('gift catalog enables all gifts, migrates saved settings, and validates the
     const defaultConfig = await defaults.json();
     assert.equal(defaultConfig.rotationSeconds, 10);
     assert.equal(defaultConfig.catalog.length, 28);
+    assert.equal(defaultConfig.catalog.find(item => item.key === 'rose').icon, '🌹');
+    assert.equal(defaultConfig.catalog.find(item => item.key === 'diamond').icon, '💎');
     assert.deepEqual(defaultConfig.catalog.map(item => [item.key, item.value]), [
       ['rose', 1], ['tiktok', 1], ['ice-cream-cone', 1], ['finger-heart', 5],
       ['panda', 5], ['mic', 5], ['doughnut', 30], ['toilet-paper', 50],
@@ -412,6 +414,67 @@ test('gift catalog enables all gifts, migrates saved settings, and validates the
     await new Promise(resolve => server.close(resolve));
     if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
     else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+  }
+});
+
+test('honor backend keeps the latest gift sender, avatar, and gift icon', async () => {
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  let previousState;
+  let hadPreviousState = false;
+
+  try {
+    const savedState = await fetch(`${baseUrl}/api/state/cluss.honorLastGift`);
+    if (savedState.ok) {
+      hadPreviousState = true;
+      previousState = await savedState.json();
+    }
+
+    const id = `honor-last-gift-${Date.now()}`;
+    handleTikTokEvent('gift', {
+      msgId: id,
+      user: {
+        uniqueId: 'honor-fan',
+        nickname: 'Honor Fan',
+        profilePictureUrl: 'https://example.test/honor-fan.jpg'
+      },
+      giftName: 'Rose',
+      giftId: 'rose',
+      diamondCount: 1
+    });
+
+    const latestResponse = await fetch(`${baseUrl}/api/honor/last-gift`);
+    assert.equal(latestResponse.status, 200);
+    const latest = (await latestResponse.json()).gift;
+    assert.equal(latest.username, 'honor-fan');
+    assert.equal(latest.displayName, 'Honor Fan');
+    assert.equal(latest.avatarUrl, 'https://example.test/honor-fan.jpg');
+    assert.equal(latest.giftName, 'Rose');
+    assert.equal(latest.giftIcon, '🌹');
+
+    let persisted;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const response = await fetch(`${baseUrl}/api/state/cluss.honorLastGift`);
+      if (response.ok) {
+        persisted = await response.json();
+        if (persisted.username === 'honor-fan') break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(persisted?.username, 'honor-fan');
+  } finally {
+    if (hadPreviousState) {
+      await fetch(`${baseUrl}/api/state/cluss.honorLastGift`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(previousState)
+      });
+    } else {
+      await fetch(`${baseUrl}/api/state/cluss.honorLastGift`, { method: 'DELETE' });
+    }
+    await new Promise(resolve => server.close(resolve));
   }
 });
 
@@ -596,7 +659,7 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   ]);
 });
 
-test('honor avatar uses a pulsing TikTok rose without placeholder text when no photo exists', () => {
+test('gift honor clears the avatar on race start and displays the selected gift icon', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const marker = "const box=document.createElement('section');box.id='honor'";
   const markerIndex = html.indexOf(marker);
@@ -616,8 +679,9 @@ test('honor avatar uses a pulsing TikTok rose without placeholder text when no p
     set innerHTML(value) { honorMarkup = value; },
   };
   const side = { firstChild: {}, querySelector: () => null, insertBefore() {} };
+  const knownAvatars = new Map();
   const context = {
-    window: { addEventListener() {} },
+    window: { addEventListener() {}, __known: knownAvatars },
     document: {
       querySelector: () => side,
       createElement: () => box,
@@ -627,19 +691,39 @@ test('honor avatar uses a pulsing TikTok rose without placeholder text when no p
     safe: callback => {
       try { return callback(); } catch { return undefined; }
     },
-    SRV: { get: () => null },
+    SRV: {
+      get: () => ({
+        rotationSeconds: 10,
+        catalog: [{ key: 'diamond', name: '💎 Diamante', value: 1000, enabled: true, aliases: ['diamond'] }]
+      })
+    },
     T: [],
     recentChatTeam: () => -1,
-    handleLiveEntry() {},
+    handleLiveEntry(event) {
+      if (event.profilePictureUrl) {
+        knownAvatars.set(event.username.toLowerCase(), { url: event.profilePictureUrl });
+      }
+    },
     reset() {},
   };
   runInNewContext(script, context);
 
-  assert.match(honorMarkup, /class="av rose" aria-hidden="true">🌹/);
+  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
   assert.doesNotMatch(honorMarkup, /—/);
-  context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', activityCount: 1 });
-  assert.match(honorMarkup, /class="av rose" aria-hidden="true">🌹/);
-  assert.match(html, /@keyframes hnRosePulse/);
+  context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', giftName: 'Diamond', activityCount: 1 });
+  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  context.handleLiveEntry({
+    bot: false,
+    type: 'follow',
+    username: 'ana',
+    profilePictureUrl: 'https://example.test/ana.jpg'
+  });
+  assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
+  context.reset();
+  assert.match(honorMarkup, /Catálogo de regalos/);
+  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  assert.doesNotMatch(honorMarkup, /@ana/);
+  assert.match(html, /class="av gift-icon"/);
 });
 
 test('team event totals reset on each race and cup cards omit audience', () => {

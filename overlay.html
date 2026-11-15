@@ -3616,9 +3616,8 @@ setInterval(()=>{try{if(over||document.hidden)return;let best=null;pts.forEach((
 #honor .ct{font:900 17px/1 Inter,sans-serif;color:#ffe14d;text-shadow:0 1px 2px #000}
 #honor .sl.hit .av{animation:hnPop .6s ease-out}
 @keyframes hnPop{0%{transform:scale(.4)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
-@keyframes hnRosePulse{50%{transform:scale(1.18)}}
-#honor .av.rose{font-size:27px!important;opacity:1!important;animation:hnRosePulse 1s ease-in-out infinite!important}
-@media (prefers-reduced-motion:reduce){#honor,#honor .sl.hit .av,#honor .av.rose{animation:none!important}}</style>
+#honor .av.gift-icon{font-size:27px!important;line-height:1;opacity:1!important}
+@media (prefers-reduced-motion:reduce){#honor,#honor .sl.hit .av{animation:none!important}}</style>
 <script>
 (function(){
 const side=document.querySelector('.side');if(!side)return;
@@ -3628,7 +3627,15 @@ const ref=side.querySelector('.bub')||side.firstChild;side.insertBefore(box,ref)
 const pd=box.querySelector('#hnPd');
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let C=new Map(),hit=''; /* HONOR: rota el catálogo habilitado y muestra aportes reales */
-const av=url=>/^https:/.test(url||'')?`<img class="av" alt="" src="${esc(url)}" onerror="this.replaceWith((()=>{const r=document.createElement('div');r.className='av rose';r.setAttribute('aria-hidden','true');r.textContent='🌹';return r})())">`:`<div class="av rose" aria-hidden="true">🌹</div>`;
+const giftIcon=gift=>{
+ const configured=String(gift&&gift.icon||'').trim();
+ if(configured&&/\p{Extended_Pictographic}/u.test(configured))return configured;
+ const name=String(gift&&gift.name||'').trim();
+ const first=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(name)][0]:null;
+ const icon=first?first.segment:[...name][0]||'';
+ return icon&&/\p{Extended_Pictographic}/u.test(icon)?icon:'🎁';
+};
+const av=(url,icon)=>/^https:/.test(url||'')?`<img class="av" alt="" referrerpolicy="no-referrer" data-fallback="${esc(icon)}" src="${esc(url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'av gift-icon',textContent:this.dataset.fallback||'🎁'}))">`:`<div class="av gift-icon" aria-hidden="true">${esc(icon)}</div>`;
 const rango=n=>n>=10?['👑 LEYENDA','#ff4d6d']:n>=3?['🔥 FANÁTICO','#ff9a1f']:['⭐ HINCHA','#ffd34d'];
 const giftNameKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60);
 const giftKey=(name,id)=>{const key=giftNameKey(name);return['rose','rosa','rosita','tiktok-rose'].includes(key)?'rose':key||(id?'id-'+giftNameKey(id):'')};
@@ -3646,6 +3653,13 @@ const giftForEvent=e=>{
  const name=giftNameKey(e.giftName),key=giftKey(e.giftName,e.giftId);
  return giftConfig.catalog.find(item=>item.enabled&&(item.key===key||item.aliases.includes(name)));
 };
+function avatarFor(e,userKey){
+ const received=String(e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'');
+ if(/^https:\/\//i.test(received))return received;
+ const known=window.__known,entry=known&&typeof known.get==='function'?known.get(userKey):null;
+ const cached=String(entry&&entry.url||'');
+ return /^https:\/\//i.test(cached)?cached:'';
+}
 function currentEntries(){
  const enabled=giftConfig.catalog.filter(gift=>gift.enabled);
  const cheap=enabled.filter(gift=>Number(gift.value)<=100).sort((a,b)=>Number(a.value)-Number(b.value));
@@ -3666,7 +3680,15 @@ function pinta(gift){
  let fl='';try{if(tm)fl=`<svg class="hflag" viewBox="0 0 40 26" aria-hidden="true">${flag(tm.id,0,0,40,26)}</svg>`}catch(x){}
  const name=contributor?`@${esc(contributor.user)}`:'Catálogo de regalos';
  const count=contributor?` ×${contributor.n}`:'';
- pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(contributor&&contributor.url)}</div><div class="tx"><span class="un">${name}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift.name)} · ${esc(value)}${count}</span></div></div>`}
+ pd.innerHTML=`<div class="sl s1 gm${contributor&&contributor.key===hit?' hit':''}" style="--tc:${col}">${fl}<div class="avw">${av(contributor&&contributor.url,giftIcon(gift))}</div><div class="tx"><span class="un">${name}</span>${tm?`<span class="cl">${esc(tm.n)}</span>`:''}<span class="rg" style="--rc:${rg[1]}">${rg[0]}</span><span class="ct">🎁 ${esc(gift.name)} · ${esc(value)}${count}</span></div></div>`}
+function refreshContributorAvatar(e){
+ const user=String(e.username||'').trim(),key=user.toLowerCase();
+ if(!user)return;
+ const url=avatarFor(e,key);if(!url)return;
+ let changed=false;
+ C.forEach(item=>{if(item.user.toLowerCase()===key&&item.url!==url){item.url=url;changed=true}});
+ if(changed){const items=currentEntries();pinta(items[cursor]||null)}
+}
 function rotate(){
  const items=currentEntries();if(!items.length){cursor=0;pinta(null);return}
  cursor=(cursor+1)%items.length;pinta(items[cursor]);
@@ -3681,14 +3703,14 @@ function setGiftConfig(value){
 }
 function honra(e){const u=String(e.username),n=Math.max(1,+e.activityCount||1);
  const gift=giftForEvent(e);if(!gift)return;
- const url=e.profilePictureUrl||e.profilePicture||e.avatarUrl||e.avatar||e.userImage||e.imageUrl||'';
+ const url=avatarFor(e,u.toLowerCase());
  const key=u.toLowerCase()+'|'+gift.key,c=C.get(key)||{key,user:u,giftKey:gift.key,giftName:gift.name,n:0,url:'',t:-1};
  c.n+=n;if(url)c.url=url;c.giftName=gift.name;c.giftValue=gift.value;
  let tt=-1;try{tt=recentChatTeam(u.toLowerCase())}catch(x){}if(tt>=0)c.t=tt;
  C.set(key,c);const items=currentEntries();
  if(items[cursor]&&items[cursor].key===gift.key){hit=key;pinta(gift);hit=''}}
 const _h=handleLiveEntry;
-handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.type==='gift'&&e.username)honra(e)}catch(x){}return r};
+handleLiveEntry=function(e){const r=_h.apply(this,arguments);try{if(e&&!e.bot&&e.username){refreshContributorAvatar(e);if(e.type==='gift')honra(e)}}catch(x){}return r};
 const _r=reset;reset=function(){C.clear();cursor=0;pinta(currentEntries()[0]||null);return _r.apply(this,arguments)};
 window.addEventListener('gift-config-update',event=>setGiftConfig(event.detail));
 /* SALA DE HONOR: se vacia en CADA partido. Ademas del reset del juego, vigila el cambio de duelo y el cierre de la pantalla de ganador. */
