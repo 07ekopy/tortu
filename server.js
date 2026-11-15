@@ -168,7 +168,7 @@ function normalizeUsername(value) {
 }
 
 function configuredUsername(savedUsername = settings.username) {
-  return normalizeUsername(savedUsername || process.env.TIKTOK_USERNAME || 'd4n1el325');
+  return normalizeUsername(savedUsername || process.env.TIKTOK_USERNAME || 'tortulive');
 }
 
 function vsConfigView(value) {

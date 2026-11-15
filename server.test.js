@@ -161,6 +161,16 @@ test('a username selected in the backend takes precedence over the environment d
   }
 });
 
+test('TikTok connection defaults to tortulive when no username is configured', () => {
+  const previous = process.env.TIKTOK_USERNAME;
+  delete process.env.TIKTOK_USERNAME;
+  try {
+    assert.equal(configuredUsername(''), 'tortulive');
+  } finally {
+    if (previous !== undefined) process.env.TIKTOK_USERNAME = previous;
+  }
+});
+
 test('backend login protects the panel and admin APIs until a session cookie is set', async () => {
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'test-admin-token';
