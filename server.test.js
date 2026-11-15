@@ -230,6 +230,41 @@ test('backend login protects the panel and admin APIs until a session cookie is 
   }
 });
 
+test('local backend defaults to key 123 without weakening production', async () => {
+  const previousToken = process.env.BACKEND_ADMIN_TOKEN;
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.BACKEND_ADMIN_TOKEN;
+
+  async function loginStatus(nodeEnv, suffix) {
+    if (nodeEnv) process.env.NODE_ENV = nodeEnv;
+    else delete process.env.NODE_ENV;
+    const { handle: isolatedHandle } = await import(new URL(`./server.js?local-key-${suffix}`, import.meta.url));
+    const server = createServer((req, res) => void isolatedHandle(req, res));
+    server.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/session`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: '123' })
+      });
+      return response.status;
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  }
+
+  try {
+    assert.equal(await loginStatus('development', 'local'), 200);
+    assert.equal(await loginStatus('production', 'production'), 401);
+  } finally {
+    if (previousToken === undefined) delete process.env.BACKEND_ADMIN_TOKEN;
+    else process.env.BACKEND_ADMIN_TOKEN = previousToken;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});
+
 test('backend VS settings default to the two requested fixtures and validate saved selections', async () => {
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'vs-config-test-token';

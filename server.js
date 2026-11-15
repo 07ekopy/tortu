@@ -143,7 +143,7 @@ let retryTimer = null;
 let retryDeadline = 0;
 let retryCount = 0;
 let shuttingDown = false;
-let adminToken = process.env.BACKEND_ADMIN_TOKEN || '';
+let adminToken = process.env.BACKEND_ADMIN_TOKEN || (process.env.NODE_ENV === 'production' ? '' : '123');
 const ADMIN_SESSION_COOKIE = 'tortu_admin_session';
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_TECHNICAL_LOGS = 200;

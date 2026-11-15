@@ -270,7 +270,8 @@
     el contador y cronometro. La lista permitida de comandos es exactamente refresh, turbo-down y turbo-up.
   - Operacion del panel: /backend y POST /api/connect requieren iniciar sesion con BACKEND_ADMIN_TOKEN; crea una cookie HttpOnly/SameSite valida por 12 horas
     para que el token se ingrese una sola vez. POST /api/admin/session inicia la sesion, DELETE la cierra y /api/admin/* acepta la cookie
-    o Authorization: Bearer <BACKEND_ADMIN_TOKEN>. Si no se configura, el token se genera al iniciar y se muestra en consola.
+    o Authorization: Bearer <BACKEND_ADMIN_TOKEN>. Sin clave configurada, en desarrollo el token local es 123; en producción
+    se genera al iniciar y se muestra en consola.
     Las mutaciones del contrato del overlay son same-origin; no se habilita CORS.
   - WhatsApp: solo envia avisos si WHATSAPP_ALERTS_ENABLED=true y WHATSAPP_WEBHOOK_URL esta configurado; regalos y transicion a
     overlay inactivo generan POST JSON. WHATSAPP_WEBHOOK_TOKEN, si existe, se envia como Bearer.
@@ -288,5 +289,6 @@ INICIO RAPIDO DEL REPOSITORIO
   Requiere Node.js 20 o posterior. Ejecutar `npm install` y luego `npm start`.
   Abrir http://127.0.0.1:3000/ para el overlay o /backend para las herramientas.
   Copiar .env.example a .env y configurar BACKEND_ADMIN_TOKEN antes de exponer el servicio.
-  Si no hay usuario guardado, el backend usa TIKTOK_USERNAME o d4n1el325.
+  Sin clave explícita, el backend local usa 123; en producción configura BACKEND_ADMIN_TOKEN.
+  Si no hay usuario guardado, el backend usa TIKTOK_USERNAME o tortulive.
   `npm test` ejecuta las pruebas del backend.
