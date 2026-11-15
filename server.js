@@ -150,6 +150,7 @@ const MAX_TECHNICAL_LOGS = 200;
 let chatMetaQueue = Promise.resolve();
 let settings = {
   username: '',
+  savedUsernames: ['tortulive'],
   giftTurboProgress: 6,
   tapTurboProgress: 20,
   timerStartedAt: Date.now(),
@@ -169,6 +170,29 @@ function normalizeUsername(value) {
 
 function configuredUsername(savedUsername = settings.username) {
   return normalizeUsername(savedUsername || process.env.TIKTOK_USERNAME || 'tortulive');
+}
+
+function usernameHistory() {
+  const usernames = [];
+  const seen = new Set();
+  for (const value of [configuredUsername(), ...(Array.isArray(settings.savedUsernames) ? settings.savedUsernames : [])]) {
+    if (typeof value !== 'string') continue;
+    const username = normalizeUsername(value);
+    const key = username.toLowerCase();
+    if (!username || seen.has(key)) continue;
+    seen.add(key);
+    usernames.push(username);
+    if (usernames.length === 20) break;
+  }
+  return usernames;
+}
+
+function rememberUsername(value) {
+  const username = normalizeUsername(value);
+  const remaining = usernameHistory().filter(item => item.toLowerCase() !== username.toLowerCase());
+  settings.username = username;
+  settings.savedUsernames = [username, ...remaining].slice(0, 20);
+  return settings.savedUsernames;
 }
 
 function vsConfigView(value) {
@@ -301,17 +325,34 @@ function eventDisplayName(data) {
 
 function eventAvatar(data) {
   const user = eventUser(data);
+  const findUrl = (value, depth = 0) => {
+    if (depth > 5) return '';
+    if (typeof value === 'string') return /^https:\/\//i.test(value.trim()) ? value.trim() : '';
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const url = findUrl(item, depth + 1);
+        if (url) return url;
+      }
+      return '';
+    }
+    if (!value || typeof value !== 'object') return '';
+    for (const key of ['url', 'uri', 'urlList', 'urls', 'profilePictureUrl', 'profilePictureUrls']) {
+      const url = findUrl(value[key], depth + 1);
+      if (url) return url;
+    }
+    return '';
+  };
   const candidates = [
-    user.profilePictureUrl, user.profilePicture?.url, user.profilePicture?.urlList, user.profilePicture?.urls, user.profilePicture,
-    user.userDetails?.profilePictureUrls, user.avatarUrl, user.avatarLarge?.urlList, user.avatarLarge, user.avatarLarger, user.avatarMedium, user.avatarThumb, user.avatar, user.userImage, user.imageUrl,
-    data?.profilePictureUrl, data?.profilePicture, data?.avatarUrl, data?.avatar, data?.userImage, data?.imageUrl
+    user.profilePictureUrl, user.profilePicture, user.profilePictureMedium, user.profilePictureLarge,
+    user.userDetails?.profilePictureUrls, user.avatarUrl, user.avatarLarge, user.avatarLarger, user.avatarMedium,
+    user.avatarThumb, user.avatar, user.userImage, user.imageUrl,
+    data?.profilePictureUrl, data?.profilePicture, data?.profilePictureMedium, data?.profilePictureLarge,
+    data?.userDetails?.profilePictureUrls, data?.avatarUrl, data?.avatarLarge, data?.avatarLarger,
+    data?.avatarMedium, data?.avatarThumb, data?.avatar, data?.userImage, data?.imageUrl
   ];
   for (const candidate of candidates) {
-    const urls = Array.isArray(candidate) ? candidate : [candidate];
-    for (const item of urls) {
-      const url = typeof item === 'object' && item !== null ? item.url || item.uri : item;
-      if (typeof url === 'string' && /^https:\/\//i.test(url)) return url;
-    }
+    const url = findUrl(candidate);
+    if (url) return url;
   }
   return '';
 }
@@ -1061,7 +1102,7 @@ const backendPage = `<!doctype html>
 :root{color-scheme:dark;--bg:#090e18;--panel:#111a29;--panel2:#0d1523;--line:#24364b;--text:#eaf3ff;--muted:#91a4bc;--cyan:#62e6ff;--lime:#a4f36d;--amber:#ffc86b;--red:#ff7189}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% -15%,#18314a 0,transparent 42%),var(--bg);color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif;min-height:100vh}
 button,input{font:inherit}button{border:1px solid #33516c;background:#18283b;color:var(--text);border-radius:9px;padding:.7rem 1rem;cursor:pointer;transition:.18s}button:hover{border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 5px 22px #36c5e622}button.primary{background:linear-gradient(120deg,#1d7884,#27604a);border-color:#57d3ce;font-weight:750}
-input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65rem .8rem;border-radius:8px;outline:none}input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #62e6ff1b}
+input,select{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65rem .8rem;border-radius:8px;outline:none}input:focus,select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #62e6ff1b}
 .shell{max-width:1240px;margin:auto;padding:0 28px 42px}.topbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #203044}
 .brand{display:flex;align-items:center;gap:12px;color:inherit;text-decoration:none}.brandmark{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(145deg,#8ff3c0,#54d8ee);color:#08202a;font-size:17px;font-weight:950;box-shadow:0 0 26px #62e6ff30}.brand b{letter-spacing:.13em;font-size:13px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.18em}
 .topmeta{display:flex;align-items:center;gap:18px;color:var(--muted);font-size:12px}.live-tag,.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid #29465b;border-radius:999px;padding:6px 11px;background:#0d1a26;color:#b9d1e6;font-size:10px;font-weight:800;letter-spacing:.1em}.dot{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 12px var(--lime)}
@@ -1075,18 +1116,18 @@ input{border:1px solid #31435a;background:#0a1220;color:var(--text);padding:.65r
 .event-list{list-style:none;padding:0;margin:0;display:grid;gap:8px;max-height:430px;overflow-y:auto}.event-row{display:grid;grid-template-columns:72px 100px minmax(100px,.55fr) minmax(0,1.45fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.event-row time,.event-user{color:var(--muted)}.event-user{display:flex;align-items:center;gap:8px;min-width:0}.event-user-label{min-width:0;overflow-wrap:anywhere}.event-avatar{flex:none;width:32px;height:32px;border:1px solid #456079;border-radius:50%;object-fit:cover;background:#25374a}.event-avatar-fallback{display:grid;place-items:center;color:#e4edf7;font-size:13px;font-weight:800}.event-avatar-fallback::before{content:attr(data-initial)}.event-kind{color:var(--cyan);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.event-detail{overflow-wrap:anywhere;white-space:pre-wrap}.log-row{display:grid;grid-template-columns:78px 70px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid #25374a;border-radius:9px;background:#0a111c;font-size:12px}.log-row time{color:var(--muted)}.log-level{font-size:10px;font-weight:800;letter-spacing:.05em}.log-level.error{color:var(--red)}.log-level.info{color:var(--cyan)}.log-message{overflow-wrap:anywhere;white-space:pre-wrap}
 .event-layout{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:14px;align-items:start}.event-filters{padding:12px;border:1px solid var(--line);border-radius:11px;background:#0c1522}.event-filters h3{margin:0 0 10px;font-size:12px}.event-filter{display:flex;align-items:center;gap:8px;padding:5px 0;color:#c9d6e5;font-size:12px}.event-filter input{width:auto;margin:0;accent-color:var(--cyan)}.event-toolbar{display:flex;justify-content:flex-end;margin-bottom:10px}.event-toolbar button{padding:.5rem .75rem;font-size:12px}
 @media(max-width:850px){.hero,.layout{grid-template-columns:1fr}.hero{gap:20px;padding-top:30px}.connection-card{max-width:none}}@media(max-width:560px){.shell{padding:0 14px 28px}.topbar{height:68px}.topmeta{gap:8px}.live-tag{font-size:9px}.hero h1{font-size:37px}.stats{gap:7px}.stat{padding:12px 10px}.panel{padding:15px}.voice-card{grid-template-columns:34px 1fr}.voice-level{grid-column:2}.field.token{min-width:100%}.event-layout{grid-template-columns:1fr}.event-filters{order:-1}.event-filters form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.event-row{grid-template-columns:60px 1fr;gap:6px}.event-user,.event-detail{grid-column:2}.event-kind{grid-column:1;grid-row:2}.log-row{grid-template-columns:60px 1fr;gap:6px}.log-message{grid-column:2}}
-.event-row[hidden]{display:none}</style></head>
+.event-row[hidden]{display:none}.unit-nav-group{display:grid;flex:0 0 auto;gap:4px;padding:5px;border:1px solid #29465b;border-radius:12px;background:#0d1a26}.unit-nav-group .unit-nav-child{margin-left:10px;padding:.4rem .65rem;font-size:11px;text-align:left}</style></head>
 <body><div class="shell">
 <header class="topbar"><a class="brand" href="/backend"><span class="brandmark">NG</span><span><b>NEGOCIO</b><small>GAME SERVER · CONTROL ROOM</small></span></a><div class="topmeta"><span class="live-tag"><i class="dot"></i> LIVE OPS</span><span id="clock">--:--:--</span></div></header>
 <main>
 <section class="hero"><div><span class="eyebrow">Game operations / servidor 01</span><h1>Controla la partida.<br><em>Domina el live.</em></h1><p>Centro de mando organizado por unidades de negocio de TortuWorld.</p><div class="hero-actions"><a href="/">Abrir overlay ↗</a><button class="primary" id="voiceToggle">♫ Voz en off</button></div></div></section>
 <section class="stats"><article class="stat"><span class="stat-label">Eventos recibidos</span><strong id="eventCount">0</strong><small>En esta sesión</small></article><article class="stat"><span class="stat-label">Regalos recibidos</span><strong id="giftCount">0</strong><small>Contador del servidor</small></article><article class="stat"><span class="stat-label">Overlay</span><strong id="overlayState">Verificando</strong><small id="overlayClients">Buscando clientes activos</small></article></section>
 <nav class="unit-nav" id="businessUnits" aria-label="Unidades de negocio">
-<button type="button" class="active" data-unit="eventos">Eventos</button><button type="button" data-unit="usuarios">Usuarios</button><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="honor">Cuadro de honor</button><button type="button" data-unit="narrador">Narrador</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
+<div class="unit-nav-group" role="group" aria-label="Usuarios y eventos"><button type="button" class="active" data-unit="usuarios">Usuarios</button><button type="button" class="unit-nav-child" data-unit="eventos">Eventos</button></div><button type="button" data-unit="regalos">Regalos</button><button type="button" data-unit="torneos">Torneos</button><button type="button" data-unit="estadisticas">Estadísticas</button><button type="button" data-unit="motor">Motor tiempo real</button><button type="button" data-unit="turbo-regalos">Turbo regalos</button><button type="button" data-unit="voz">Voz en off</button><button type="button" data-unit="honor">Cuadro de honor</button><button type="button" data-unit="narrador">Narrador</button><button type="button" data-unit="acciones">CTAs / Acciones</button><button type="button" data-unit="logs">Logs</button>
 </nav>
 <section class="panel business-panel" data-units="eventos"><header><h2><span class="icon">⚡</span> Eventos LIVE</h2><span class="pill">ÚLTIMOS 50</span></header><p class="subtle">Eventos recibidos en esta sesión: <b id="eventUnitCount">0</b>. Los más recientes aparecen primero.</p><div class="event-layout"><div><div class="event-toolbar"><button type="button" id="copyEvents">Copiar eventos visibles</button><button type="button" id="clearEvents">Limpiar eventos</button></div><p class="message" id="eventMessage" role="status"></p><p class="unit-empty" id="eventEmpty">Esperando eventos de TikTok…</p><ol class="event-list" id="eventList" aria-live="polite"></ol></div><aside class="event-filters" aria-label="Filtrar eventos"><h3>Mostrar eventos</h3><form id="eventFilterForm"><label class="event-filter"><input type="checkbox" data-event-filter="all" checked> Todos</label><label class="event-filter"><input type="checkbox" data-event-filter="member" checked> Se unieron</label><label class="event-filter"><input type="checkbox" data-event-filter="chat" checked> Comentarios</label><label class="event-filter"><input type="checkbox" data-event-filter="like" checked> Me gusta / taps</label><label class="event-filter"><input type="checkbox" data-event-filter="follow" checked> Seguidores</label><label class="event-filter"><input type="checkbox" data-event-filter="share" checked> Compartidos</label><label class="event-filter"><input type="checkbox" data-event-filter="gift" checked> Regalos</label><button type="submit" class="primary" id="applyEventFilters" style="width:100%;margin-top:8px">Aplicar filtros</button></form></aside></div><pre class="pre" id="tools" hidden></pre></section>
 <section class="panel business-panel" data-units="logs" id="logsPanel"><header><h2><span class="icon">📜</span> Logs técnicos</h2><span class="pill" id="logsCount">SESIÓN ACTUAL</span></header><p class="subtle">Avisos y errores recientes del servidor. Se conservan mientras esta sesión del servidor está activa.</p><div class="toolbar"><button id="refreshLogs">Actualizar</button></div><p class="unit-empty" id="logsEmpty">Sin registros técnicos todavía.</p><ol class="event-list" id="serverLogs" aria-live="polite"></ol><p class="message" id="logsError" role="status"></p></section>
-<section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form></article></section>
+<section class="panel business-panel" data-units="usuarios"><header><h2><span class="icon">👤</span> Usuarios</h2><span class="pill">LIVE</span></header><pre class="pre" id="recentUsers">Cargando usuarios…</pre><article class="connection-card user-connection"><header><h2>Conexión TikTok</h2><span class="status-pill" id="status">CONECTANDO</span></header><p class="subtle">Usuario actual: <b id="currentUsername">Sin usuario</b></p><p class="subtle" id="statusDetail">Esperando estado del servidor…</p><form id="connect" class="form-row"><label class="field">Usuarios guardados<select id="savedUsername"><option value="">Cargando usuarios guardados…</option></select></label><label class="field">Usuario del live<input name="username" placeholder="Ingresa el usuario sin @" required></label><button class="primary">Conectar</button><button type="button" id="reconnect">Reintentar</button></form><p class="message" id="savedUsernameMessage" role="status"></p></article></section>
 <section class="panel business-panel" data-units="regalos turbo-regalos"><header><h2><span class="icon">🎁</span> Negocio de regalos</h2><span class="pill">CATÁLOGO Y ROTACIÓN</span></header><p class="subtle">Total recibidos: <b id="giftUnitCount">0</b></p><p class="subtle">Turbo por unidad: 10 m de base + 5 m por cada diamante. Se recorre durante 15 segundos; un regalo de 1 diamante avanza 15 m.</p><input id="gift" type="hidden" value="6"><h3>Catálogo de regalos · monedas</h3><p class="subtle">Rosita empieza habilitada. El catálogo incluye los regalos y valores en monedas indicados; los regalos no catalogados aparecen con valor sin informar y deshabilitados.</p><div class="form-row"><label class="field">Rotar en el cuadro de honor cada (segundos)<input id="giftRotation" type="number" min="1" max="3600" value="10"></label></div><div id="giftCatalogList" class="gift-catalog-list"><div class="unit-empty">Cargando catálogo…</div></div><div class="toolbar"><button class="primary" id="saveGiftCatalog">Guardar catálogo y rotación</button></div><p class="message" id="giftConfigMessage" role="status"></p></section>
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🚩</span> Torneos · catálogo de equipos</h2><span class="pill">TORNEOS</span></header><p class="subtle">Banderas de los equipos disponibles en los VS configurables.</p><div id="teamCatalogList" class="team-catalog-list"><div class="unit-empty">Cargando banderas…</div></div></section>
 <section class="panel business-panel" data-units="torneos"><header><h2><span class="icon">🐢</span> Torneos · contador de equipos</h2><span class="pill">TORNEOS</span></header><div class="form-row"><label class="field">Avance del turbo por taps (%)<input id="tap" type="number" min="0" max="100" value="20"></label><button class="primary" id="saveTapTurbo">Guardar ajustes de equipos</button><button data-command="turbo-down">Turbo −</button><button data-command="turbo-up">Turbo +</button></div><div class="motor-grid" id="teamTelemetry"><div class="unit-empty">Esperando valores del motor…</div></div></section>
@@ -1189,12 +1230,12 @@ $('#businessUnits').addEventListener('click',event=>{
  if(unit==='voz'||unit==='narrador')loadVoice();
  if(unit==='honor')loadHonorBoard();
 });
-showUnit('eventos');
+showUnit('usuarios');
 $('#clock').textContent=new Date().toLocaleTimeString('es');
 setInterval(()=>$('#clock').textContent=new Date().toLocaleTimeString('es'),1000);
 $('#refreshLogs').onclick=loadTechnicalLogs;
 setInterval(()=>{const panel=document.querySelector('[data-units="torneos"]');if(panel&&!panel.hidden)loadVsConfig(true)},3000);
-$('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.username.value})});const j=await r.json();if(!r.ok)throw Error(j.message);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
+$('#connect').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/api/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:e.target.elements.namedItem('username').value})});const j=await r.json();if(!r.ok)throw Error(j.message);renderSavedUsernames(j.usernames,j.username);msg('Conectando con @'+j.username)}catch(x){msg(x.message)}};
 $('#reconnect').onclick=async()=>{try{await admin('/api/admin/reconnect');msg('Reconexión solicitada')}catch(e){msg(e.message)}};
 $('#saveGiftCatalog').onclick=async()=>{
  const enabledKeys=Array.from(document.querySelectorAll('#giftCatalogList input[type="checkbox"]:checked')).map(input=>input.dataset.giftKey);
@@ -1354,7 +1395,7 @@ function renderLiveEvent(entry){
  if(entry.username&&entry.displayName&&entry.displayName.toLowerCase()!==entry.username.toLowerCase())userLabel.textContent+=' · '+entry.displayName;
  fallback.className='event-avatar event-avatar-fallback';fallback.dataset.initial=String(entry.displayName||entry.username||'?').trim().slice(0,1).toUpperCase()||'?';fallback.setAttribute('aria-hidden','true');
  if(avatarUrl.toLowerCase().startsWith('https://')){
-  const photo=document.createElement('img');photo.className='event-avatar';photo.alt='';photo.loading='lazy';photo.referrerPolicy='no-referrer';photo.onerror=()=>photo.replaceWith(fallback);photo.src=avatarUrl;user.append(photo);
+  const photo=document.createElement('img');photo.className='event-avatar';photo.alt='';photo.loading='eager';photo.referrerPolicy='strict-origin-when-cross-origin';photo.onerror=()=>photo.replaceWith(fallback);photo.src=avatarUrl;user.append(photo);
  }else user.append(fallback);
  user.append(userLabel);
  detail.className='event-detail';detail.textContent=eventDetail(entry);row.append(time,kind,user,detail);list.prepend(row);applyEventFilters();
@@ -1372,6 +1413,17 @@ tools.addEventListener('game-tools',e=>{const x=JSON.parse(e.data);$('#tools').t
 tools.addEventListener('game-settings',e=>{const x=JSON.parse(e.data);$('#gift').value=x.giftTurboProgress;$('#tap').value=x.tapTurboProgress});
 tools.addEventListener('gift-config',e=>{try{renderGiftConfig(JSON.parse(e.data))}catch(error){$('#giftConfigMessage').textContent='No se pudo actualizar el catálogo: '+error.message}});
 fetch('/api/recent-users',{cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#recentUsers').textContent=JSON.stringify(result.users||[],null,2)}).catch(error=>{$('#recentUsers').textContent=error.message});
+const savedUsernameSelect=$('#savedUsername');
+function renderSavedUsernames(usernames,selected){
+ const options=Array.isArray(usernames)?usernames:[];
+ savedUsernameSelect.replaceChildren();
+ const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Selecciona un usuario guardado';savedUsernameSelect.append(placeholder);
+ options.forEach(username=>{const option=document.createElement('option');option.value=username;option.textContent='@'+username;savedUsernameSelect.append(option)});
+ if(selected&&!options.some(username=>username.toLowerCase()===selected.toLowerCase())){const option=document.createElement('option');option.value=selected;option.textContent='@'+selected;savedUsernameSelect.append(option)}
+ savedUsernameSelect.value=selected||'';
+}
+savedUsernameSelect.addEventListener('change',()=>{if(savedUsernameSelect.value)$('#connect').elements.namedItem('username').value=savedUsernameSelect.value});
+fetch('/api/admin/usernames',{credentials:'same-origin',cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);renderSavedUsernames(result.usernames,result.selected)}).catch(error=>{$('#savedUsernameMessage').textContent='No se pudieron cargar los usuarios guardados: '+error.message});
 fetch('/api/admin/tournament-enabled',{credentials:'same-origin',cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.message||response.status);$('#tournamentEnabled').checked=!!result.enabled}).catch(error=>msg(error.message));
 async function refresh(){
  try{
@@ -1500,6 +1552,11 @@ async function handle(req, res) {
     safeJson(res, 200, { users: recentUsers.slice(0, 4) });
     return;
   }
+  if (path === '/api/admin/usernames' && req.method === 'GET') {
+    if (!requireAdmin(req, res)) return;
+    safeJson(res, 200, { selected: configuredUsername(), usernames: usernameHistory() });
+    return;
+  }
   if (path === '/api/honor/last-gift' && req.method === 'GET') {
     safeJson(res, 200, { gift: latestHonorGift });
     return;
@@ -1530,7 +1587,7 @@ async function handle(req, res) {
       safeJson(res, 400, { ok: false, message: 'El usuario de TikTok no puede estar vacío.' });
       return;
     }
-    settings.username = requested;
+    rememberUsername(requested);
     await persistSettings();
     const username = requested;
     retryDeadline = Date.now() + 5 * 60 * 1000;
@@ -1538,7 +1595,7 @@ async function handle(req, res) {
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
     void createConnection(username);
-    safeJson(res, 200, { ok: true, username, message: 'Conexión iniciada.' });
+    safeJson(res, 200, { ok: true, username, usernames: usernameHistory(), message: 'Conexión iniciada.' });
     return;
   }
   if (path === '/api/game-tools/overlay-heartbeat' && req.method === 'POST') {
@@ -1846,6 +1903,8 @@ async function handle(req, res) {
 async function main() {
   await mkdir(DATA_DIR, { recursive: true });
   settings = { ...settings, ...(await loadJson(resolve(DATA_DIR, 'settings.json'), {})) };
+  settings.username = configuredUsername();
+  settings.savedUsernames = usernameHistory();
   await loadGiftConfig();
   const storedHonorGift = await getState('cluss.honorLastGift');
   latestHonorGift = storedHonorGift.found ? storedHonorGift.value : null;
@@ -1855,6 +1914,7 @@ async function main() {
     settings.countryStats[country.code] ||= { comments: 0, cups: 0 };
   }
   settings.countryStats['sin-pais'] ||= { comments: 0, cups: 0 };
+  await persistSettings();
   if (!adminToken) {
     adminToken = randomBytes(24).toString('base64url');
     console.log(`Token BACKEND_ADMIN_TOKEN generado para esta sesión: ${adminToken}`);

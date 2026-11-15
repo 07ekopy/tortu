@@ -189,6 +189,8 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.equal(lockedVoiceConfig.status, 401);
     const lockedLogs = await fetch(`${baseUrl}/api/admin/logs`);
     assert.equal(lockedLogs.status, 401);
+    const lockedUsernames = await fetch(`${baseUrl}/api/admin/usernames`);
+    assert.equal(lockedUsernames.status, 401);
     const lockedConnect = await fetch(`${baseUrl}/api/connect`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -218,6 +220,11 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     const unlockedLogs = await fetch(`${baseUrl}/api/admin/logs?limit=20`, { headers: { cookie } });
     assert.equal(unlockedLogs.status, 200);
     assert.deepEqual((await unlockedLogs.json()).logs, []);
+    const unlockedUsernames = await fetch(`${baseUrl}/api/admin/usernames`, { headers: { cookie } });
+    assert.equal(unlockedUsernames.status, 200);
+    const usernameList = await unlockedUsernames.json();
+    assert.equal(usernameList.selected, 'tortulive');
+    assert.ok(usernameList.usernames.includes('tortulive'));
 
     const logout = await fetch(`${baseUrl}/api/admin/session`, { method: 'DELETE', headers: { cookie } });
     assert.equal(logout.status, 200);
@@ -792,7 +799,7 @@ test('team event totals reset on each race and cup cards omit audience', () => {
   assert.doesNotMatch(html, /class="cc-fans"|fans-copas-js|gamiFans/);
 });
 
-test('backend exposes business-unit buttons and live motor telemetry', async () => {
+test('backend exposes business-unit buttons, renders TikTok avatar URLs, and shows live motor telemetry', async () => {
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'motor-test-token';
   const server = createServer((req, res) => void handle(req, res));
@@ -850,16 +857,19 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
       () => 'Detalle',
       () => {}
     );
-    renderEvent({
-      type: 'gift',
-      username: 'ana',
-      displayName: 'Ana',
-      profilePictureUrl: 'https://example.test/ana.jpg',
-      receivedAt: Date.now()
+    const avatarEntry = normalizeTikTokEvent('gift', {
+      user: {
+        uniqueId: 'ana',
+        nickname: 'Ana',
+        userDetails: { profilePictureUrls: { urlList: ['https://example.test/ana.jpg'] } }
+      }
     });
+    renderEvent({ ...avatarEntry, receivedAt: Date.now() });
     const photoUser = eventRowsForRender[0].children[2];
     assert.equal(photoUser.children[0].tagName, 'IMG');
     assert.equal(photoUser.children[0].src, 'https://example.test/ana.jpg');
+    assert.equal(photoUser.children[0].loading, 'eager');
+    assert.equal(photoUser.children[0].referrerPolicy, 'strict-origin-when-cross-origin');
     assert.equal(photoUser.children[1].textContent, '@ana');
     renderEvent({ type: 'chat', username: 'luz', displayName: 'Luz', profilePictureUrl: 'javascript:alert(1)' });
     const fallbackUser = eventRowsForRender[0].children[2];
@@ -919,13 +929,17 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     filter();
     assert.equal(eventEmpty.hidden, false);
     assert.match(eventEmpty.textContent, /No hay eventos/);
-    assert.match(html, /<button type="button" class="active" data-unit="eventos">/);
+    assert.match(html, /<div class="unit-nav-group" role="group" aria-label="Usuarios y eventos"><button type="button" class="active" data-unit="usuarios">Usuarios<\/button><button type="button" class="unit-nav-child" data-unit="eventos">Eventos<\/button><\/div>/);
     const userPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
     assert.ok(userPanel);
     assert.match(userPanel, /id="currentUsername"/);
     assert.match(userPanel, /id="status"/);
     assert.match(userPanel, /<form id="connect"/);
     assert.match(userPanel, /name="username"/);
+    assert.match(userPanel, /id="savedUsername"/);
+    assert.match(userPanel, /Usuarios guardados/);
+    assert.match(script, /fetch\('\/api\/admin\/usernames'/);
+    assert.match(script, /renderSavedUsernames\(j\.usernames,j\.username\)/);
     for (const unit of ['eventos', 'usuarios', 'regalos', 'torneos', 'estadisticas', 'motor', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
       assert.match(html, new RegExp(`data-unit="${unit}"`));
     }
@@ -951,7 +965,7 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     const navigationStart = script.indexOf('const unitButtons=');
     const navigationEnd = script.indexOf("$('#clock').textContent");
     const navigationCode = script.slice(navigationStart, navigationEnd);
-    const buttons = ['eventos', 'usuarios'].map(unit => ({
+    const buttons = ['usuarios', 'eventos'].map(unit => ({
       dataset: { unit },
       classList: { active: false, toggle(name, force) { if (name === 'active') this.active = force; } },
       setAttribute(name, value) { this[name] = value; }
@@ -980,11 +994,12 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     clickUnit('usuarios');
     assert.equal(panels[0].hidden, true);
     assert.equal(panels[1].hidden, false);
-    assert.equal(buttons[1].classList.active, true);
+    assert.equal(buttons[0].classList.active, true);
     assert.equal(panels[1].scrolled, true);
     clickUnit('eventos');
     assert.equal(panels[0].hidden, false);
     assert.equal(panels[1].hidden, true);
+    assert.equal(buttons[1].classList.active, true);
 
     const invalid = await fetch(`${baseUrl}/api/motor/telemetry`, {
       method: 'POST',
@@ -1208,6 +1223,12 @@ test('TikTok events are normalized to the six allowed types without forwarding b
   assert.equal(normalizeTikTokEvent('member', {
     user: { uniqueId: 'fan1', userDetails: { profilePictureUrls: 'https://example.test/late-avatar.jpg' } }
   })?.profilePictureUrl, 'https://example.test/late-avatar.jpg');
+  assert.equal(normalizeTikTokEvent('member', {
+    user: {
+      uniqueId: 'fan1',
+      userDetails: { profilePictureUrls: { urlList: ['https://example.test/nested-avatar.jpg'] } }
+    }
+  })?.profilePictureUrl, 'https://example.test/nested-avatar.jpg');
   assert.equal(normalizeTikTokEvent('share', { user: { displayId: 'fan2' } })?.username, 'fan2');
 });
 
