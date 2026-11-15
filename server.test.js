@@ -138,6 +138,128 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   assert.equal(sandbox.giftSpeechGeneration, 1);
 });
 
+test('TikTok events flow through SSE and the voice queue in business-priority order', async () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const script = html.match(/<script id="voz-prioridad-js">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+
+  const spoken = [];
+  const browser = {
+    window: {
+      speechSynthesis: {
+        speak: utterance => spoken.push(utterance),
+        cancel() {},
+        getVoices: () => [],
+        addEventListener() {}
+      },
+      liveEventMonitor: { receive(event) { return event; } },
+      I18N: { en: false },
+      addEventListener() {}
+    },
+    T: [{ id: 'ol', n: 'Olimpia' }, { id: 'cp', n: 'Cerro' }],
+    S: [{ p: 0 }, { p: 0 }],
+    P: { vo: 1 },
+    over: false,
+    findTeam: text => String(text).includes('Cerro') ? 1 : -1,
+    fetch: () => Promise.resolve({ ok: false }),
+    setInterval: () => 0,
+    setTimeout,
+    clearTimeout,
+    addEventListener() {},
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } }
+  };
+  runInNewContext(script, browser);
+
+  const server = createServer((req, res) => void handle(req, res));
+  server.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const controller = new AbortController();
+  let reader;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/events`, { signal: controller.signal });
+    assert.equal(response.status, 200);
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const receiveEvent = async () => {
+      while (true) {
+        const boundary = buffer.indexOf('\n\n');
+        if (boundary >= 0) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const event = frame.match(/^event:\s*(.+)$/m)?.[1];
+          const data = frame.match(/^data:\s*(.+)$/m)?.[1];
+          if (data) return { event, payload: JSON.parse(data) };
+        }
+        const chunk = await reader.read();
+        assert.equal(chunk.done, false, 'SSE stream stays open');
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+
+    assert.equal((await receiveEvent()).event, 'status');
+    const id = `voice-priority-${Date.now()}`;
+    const emit = async (type, raw) => {
+      handleTikTokEvent(type, { msgId: `${id}-${type}`, ...raw });
+      const event = await receiveEvent();
+      assert.equal(event.event, 'update');
+      assert.equal(event.payload.entry.type, type);
+      browser.window.liveEventMonitor.receive(event.payload.entry);
+    };
+
+    const gift = normalizeTikTokEvent('gift', {
+      giftName: 'Rose',
+      diamondCount: 1,
+      user: { uniqueId: `${id}-gift`, nickname: 'Gift Fan' }
+    });
+    browser.window.liveEventMonitor.receive(gift);
+    assert.equal(spoken[0]?.text, 'Gracias Gift Fan por el regalo');
+
+    await emit('chat', {
+      comment: 'Cerro vamos todos',
+      user: { uniqueId: `${id}-chat`, nickname: 'Chat Fan' }
+    });
+    await emit('member', {
+      user: { uniqueId: `${id}-member`, nickname: 'Member Fan' }
+    });
+    await emit('follow', {
+      user: { uniqueId: `${id}-follow`, nickname: 'Follow Fan' }
+    });
+
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(browser.window.getVoiceMonitorState().queue.map(item => [item.id, item.priority]))),
+      [['move', 1], ['chat', 2], ['welcome', 3], ['action', 3]]
+    );
+
+    for (const [index, expected] of [
+      [1, 'Chat Fan se une a Cerro'],
+      [2, 'Chat Fan dice: Cerro vamos todos'],
+      [3, 'Bienvenido Member Fan'],
+      [4, 'Gracias Follow Fan por seguirnos']
+    ]) {
+      spoken[index - 1].onend();
+      await new Promise(resolve => setTimeout(resolve, 275));
+      assert.equal(spoken[index]?.text, expected);
+    }
+
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(browser.window.getVoiceMonitorState().levels
+        .slice()
+        .sort((a, b) => a.priority - b.priority)
+        .map(level => [level.id, level.priority]))),
+      [['gift', 0], ['move', 1], ['chat', 2], ['welcome', 3], ['action', 3], ['match', 4]]
+    );
+  } finally {
+    controller.abort();
+    if (reader) void reader.cancel().catch(() => {});
+    await new Promise(resolve => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
+  }
+});
+
 test('backend voice setting controls Don Tortu avatar and speech', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const setSource = html.match(/function setDonTortuEnabled\(enabled\)\{[\s\S]*?\n\}/)?.[0];
@@ -692,9 +814,21 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
     assert.equal(defaults.status, 200);
     const defaultConfig = await defaults.json();
     assert.equal(defaultConfig.repeatCooldownMinutes, 1);
-    assert.equal(defaultConfig.donTortuEnabled, false);
+    assert.equal(defaultConfig.donTortuEnabled, true);
     assert.ok(Object.values(defaultConfig.enabledLevels).length > 0);
     assert.ok(Object.values(defaultConfig.enabledLevels).every(enabled => enabled === true));
+    const deniedOverlayToggle = await fetch(`${baseUrl}/api/overlay/don-tortu`, {
+      method: 'POST',
+      headers: { Origin: baseUrl }
+    });
+    assert.equal(deniedOverlayToggle.status, 403);
+    const overlayHeaders = { Origin: baseUrl, 'X-Overlay-Control': 'don-tortu' };
+    const overlayDisabled = await fetch(`${baseUrl}/api/overlay/don-tortu`, { method: 'POST', headers: overlayHeaders });
+    assert.equal(overlayDisabled.status, 200);
+    assert.equal((await overlayDisabled.json()).donTortuEnabled, false);
+    const overlayEnabled = await fetch(`${baseUrl}/api/overlay/don-tortu`, { method: 'POST', headers: overlayHeaders });
+    assert.equal(overlayEnabled.status, 200);
+    assert.equal((await overlayEnabled.json()).donTortuEnabled, true);
     const savedNames = await fetch(`${baseUrl}/api/admin/usernames`, { headers });
     const savedUsernames = (await savedNames.json()).usernames;
     for (const username of ['radiofenica', 'reciclemaiis', 'tortulive']) assert.ok(savedUsernames.includes(username));
@@ -1083,6 +1217,38 @@ test('team event totals reset on each race and cup cards omit audience', () => {
   assert.doesNotMatch(html, /class="cc-fans"|fans-copas-js|gamiFans/);
 });
 
+test('cup board renders both countries in one Honor-height box', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const marker = '<!-- ===== COPAS: una sola caja compacta con bandera y total de cada rival. ===== -->';
+  const start = html.indexOf('<script>', html.indexOf(marker));
+  const end = html.indexOf('</script>', start);
+  assert.ok(start >= 0 && end > start);
+  const box = { classList: { add() {} }, setAttribute() {}, innerHTML: '' };
+  const side = { insertBefore(item) { this.item = item; } };
+  runInNewContext(html.slice(start + 8, end), {
+    document: {
+      querySelector: () => side,
+      createElement: () => box,
+      getElementById: () => ({ nextSibling: null })
+    },
+    window: { gamiVS: { data: { st: {} } }, I18N: { en: false } },
+    T: [{ id: 'ol' }, { id: 'cp' }],
+    SRV: { get: () => ({ cl: { 'cp|ol': { ol: 2, cp: 5 } } }) },
+    CLASSIC_FIXTURES: [['ol', 'cp']],
+    CLASSIC_NAMES: ['Superclásico'],
+    tournamentItem: id => ({ n: id === 'ol' ? 'OLIMPIA' : 'CERRO' }),
+    flag: id => `<rect id="${id}"/>`,
+    setInterval() {}
+  });
+  assert.equal(side.item, box);
+  assert.equal((box.innerHTML.match(/class="cup-entry"/g) || []).length, 2);
+  assert.match(box.innerHTML, /class="cup-flag"><svg[^>]*><rect id="cp"/);
+  assert.match(box.innerHTML, /class="cup-count">5<\/b>/);
+  assert.match(box.innerHTML, /class="cup-count">2<\/b>/);
+  assert.doesNotMatch(box.innerHTML, /class="cc\b|PRIMER PUESTO|SEGUNDO PUESTO/);
+  assert.match(html, /#copas\.cp2\{[^}]*height:var\(--honor-panel-height,auto\)!important/);
+});
+
 test('backend exposes business-unit buttons, renders TikTok avatar URLs, and shows live motor telemetry', async () => {
   const overlay = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
@@ -1106,6 +1272,10 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     assert.doesNotThrow(() => new Function(script));
     assert.match(html, /id="eventList"/);
     assert.match(html, /id="clearEvents"/);
+    assert.match(html, /id="donTortuToggle"/);
+    assert.match(html, /\$\('#voiceToggle'\)\.onclick=.*?;\s*loadVoice\(\);/);
+    assert.match(overlay, /tortuToggle\.id='donTortuOverlayToggle'/);
+    assert.match(overlay, /fetch\('\/api\/overlay\/don-tortu'/);
     assert.match(html, /id="applyEventFilters"/);
     assert.match(html, /\.event-row\[hidden\]\{display:none\}/);
     assert.match(html, /id="copyEvents"/);
@@ -1422,6 +1592,7 @@ test('gift counter emulates a rose locally and HonorBoard receives live catalog 
 test('honor panel height aligns with the bottom of the team tap counters', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   assert.match(html, /#honor\{flex:0 0 var\(--honor-panel-height,auto\)!important;height:var\(--honor-panel-height,auto\)!important/);
+  assert.match(html, /#copas\.cp2\{[^}]*height:var\(--honor-panel-height,auto\)!important/);
   const script = html.match(/<script id="honor-height-to-taps-js">([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script);
   const styles = new Map();
@@ -1430,6 +1601,12 @@ test('honor panel height aligns with the bottom of the team tap counters', () =>
     { getBoundingClientRect: () => ({ bottom: 180 }) },
   ];
   const honor = {
+    parentElement: {
+      style: {
+        getPropertyValue: key => styles.get(key) || '',
+        setProperty: (key, value) => styles.set(key, value),
+      },
+    },
     style: {
       getPropertyValue: key => styles.get(key) || '',
       setProperty: (key, value) => styles.set(key, value),

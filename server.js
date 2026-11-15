@@ -770,7 +770,7 @@ function voiceConfigView(value) {
     repeatCooldownMinutes: Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440
       ? minutes
       : voicePriority.repeatCooldownMinutes,
-    donTortuEnabled: value?.donTortuEnabled === true,
+    donTortuEnabled: value?.donTortuEnabled !== false,
     enabledLevels: Object.fromEntries(voicePriority.levels.map(level => [
       level.id,
       typeof storedLevels[level.id] === 'boolean' ? storedLevels[level.id] : true
@@ -1150,10 +1150,13 @@ function sse(req, res, pool, initialEvents = []) {
   for (const [event, data] of initialEvents) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   pool.add(res);
   const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 20000);
-  req.on('close', () => {
+  heartbeat.unref();
+  const cleanup = () => {
     clearInterval(heartbeat);
     pool.delete(res);
-  });
+  };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
 }
 
 function contentType(path) {
@@ -1410,6 +1413,7 @@ $('#donTortuToggle').onclick=async()=>{
  finally{button.disabled=false}
 };
 $('#voiceToggle').onclick=()=>{showUnit('voz');loadVoice()};
+loadVoice();
 async function loadHonorBoard(){
  try{
   const [resultsResponse,giftResponse]=await Promise.all([
@@ -1792,6 +1796,18 @@ async function handle(req, res) {
     retryTimer = null;
     void createConnection(username);
     safeJson(res, 200, { ok: true, username, message: `Conectando a @${username}.` });
+    return;
+  }
+  if (path === '/api/overlay/don-tortu' && req.method === 'POST') {
+    if (req.headers['x-overlay-control'] !== 'don-tortu' || !isSameOriginRequest(req)) {
+      safeJson(res, 403, { ok: false, message: 'El control de Don Tortu solo está disponible desde el overlay.' });
+      return;
+    }
+    const config = await loadVoiceConfig();
+    config.donTortuEnabled = !config.donTortuEnabled;
+    await setState('cluss.voice', config);
+    broadcastTool('voice-config', config);
+    safeJson(res, 200, { ok: true, donTortuEnabled: config.donTortuEnabled });
     return;
   }
   if (path === '/api/game-tools/overlay-heartbeat' && req.method === 'POST') {

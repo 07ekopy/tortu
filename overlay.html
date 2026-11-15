@@ -36,6 +36,7 @@
   GET    /api/log/chat-texts.json | .txt   descarga del archivo del chat, con Content-Disposition: attachment.                 (PARTE 5)
   GET    /api/recent-users                 {"users":[{"username","avatar"}]} maximo 4, solo personas reales.                  (PARTE 4)
   GET    /api/voice-priority               prioridades, niveles habilitados y minutos antirrepetición de la voz en off.         (PARTE 6)
+  POST   /api/overlay/don-tortu            alterna voz y avatar de Don Tortu desde el botón de tortuga del overlay.
   GET    /api/deployment-signature         {"signature":"sha256-<16 hex>"}. Ver "FIRMA DE DESPLIEGUE" mas abajo.
   GET    /api/game-tools/events            SSE de herramientas del juego. Eventos: game-settings, game-tools, game-command.   (ver abajo)
   POST   /api/game-tools/overlay-heartbeat body {clientId,visible}. El overlay avisa que esta vivo y visible.                  (ver abajo)
@@ -1692,7 +1693,7 @@ update();
 const P=window.P={mus:1,sfx:1,xp:0,wins:[0,0],fx:0,cp:{ol:0,cp:0,li:0,gu:0,lu:0,na:0,sa:0,to:0},races:0,ach:{},tournamentMode,countryPopularity,countryEntrants,tournamentInteractions};
 try{Object.assign(P,SRV.get('cluss.v1',{}))}catch(e){}
 const donTortuConfig=SRV.get('cluss.voice',{});
-window.donTortuEnabled=donTortuConfig.donTortuEnabled===true;
+window.donTortuEnabled=donTortuConfig.donTortuEnabled!==false;
 P.vo=window.donTortuEnabled?1:0;
 P.cp=Object.assign({ol:0,cp:0,li:0,gu:0,lu:0,na:0,sa:0,to:0},P.cp||{});
 P.cl=P.cl&&typeof P.cl==='object'?P.cl:{}; /* copas POR CLASICO: P.cl['id1|id2'][idClub]=copas (ids ordenados). Argentina tiene copas separadas en cada uno de sus clasicos */
@@ -2623,6 +2624,7 @@ function talk(ms,team){
 function setDonTortuEnabled(enabled){
  if(typeof enabled!=='boolean')return;
  window.donTortuEnabled=enabled;P.vo=enabled?1:0;
+ if(typeof window.updateDonTortuButton==='function')window.updateDonTortuButton(enabled);
  dt0.hidden=!enabled;dt0.style.display=enabled?'':'none';
  const nameplate=dt0.nextElementSibling;
  if(nameplate&&nameplate.classList.contains('plate')){nameplate.hidden=!enabled;nameplate.style.display=enabled?'':'none'}
@@ -3785,7 +3787,7 @@ fetch('/api/gifts/catalog',{cache:'no-store'}).then(response=>{if(!response.ok)t
 })();
 </script>
 
-<!-- ===== COPAS POR CLUB: reemplaza el fixture visual. #top3 sigue existiendo (la logica del cuadro BR no se toca) pero oculto. ===== -->
+<!-- ===== COPAS: una sola caja compacta con bandera y total de cada rival. ===== -->
 <style id="copas-css">
 #top3{display:none!important}
 #copas{width:100%;border:2px solid #ffe14d;border-radius:14px;background:linear-gradient(#2a1a08,#120a03);font-family:Inter,sans-serif;color:#fff}
@@ -3804,32 +3806,20 @@ const t3=document.getElementById('top3');side.insertBefore(box,t3?t3.nextSibling
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nom=id=>{try{const n=tournamentItem(id).n;return n[0]+n.slice(1).toLowerCase()}catch(e){return String(id).toUpperCase()}};
 const ban=id=>{try{return`<svg viewBox="0 0 40 40" aria-hidden="true">${flag(id,0,0,40,40)}</svg>`}catch(e){return'<svg viewBox="0 0 40 40"></svg>'}};
-let ult='';const prev={};
+let ult='';
 function pinta(){try{
 let currentCp={},stats={},cp={};const act=T.map(x=>x.id);
- /* SOLO las copas de ESTE clasico: las 2 tarjetas son los 2 rivales y cuentan solo las series ganadas entre ellos */
+ /* Solo muestra las copas acumuladas de los dos rivales del VS actual. */
  const ck=act.slice().sort().join('|');let cn='';
 try{currentCp=(SRV.get('cluss.v1',{}).cl||{})[ck]||{}}catch(e){}
 try{stats=window.gamiVS.data.st[ck]||{}}catch(e){}
 cp=Object.assign({},stats.cups&&typeof stats.cups==='object'?stats.cups:currentCp);
 act.forEach(id=>{cp[id]=Math.max(Number(cp[id])||0,Number(currentCp[id])||0)});
  try{const ix=CLASSIC_FIXTURES.findIndex(f=>f.slice().sort().join('|')===ck);cn=ix>=0?CLASSIC_NAMES[ix]:''}catch(e){}
- /* el podio: los 3 clubes con mas copas; el duelo en curso desempata y siempre aparece si hay lugar */
- let bra=[];try{bra=(BR.r[0]||[]).filter(Boolean)}catch(e){}
- const con=Object.keys(cp).filter(k=>(cp[k]||0)>0),ord=id=>{const q=bra.indexOf(id);return q<0?99:q};
- const ids=act.slice();
- const a=ids.sort((x,y)=>(cp[y]||0)-(cp[x]||0)||(act.includes(y)-act.includes(x))||ord(x)-ord(y)).slice(0,2);
- /* DOS tarjetas del MISMO tamano (1° y 2°). Medalla, corona, copas en grande, barra de distancia al lider, estado (ventaja / a cuantas copas esta / empate), punto verde si esta en pista y destello +1 al ganar una copa. */
- const en=!!(window.I18N&&window.I18N.en),c0=cp[a[0]]||0,c1=a[1]?(cp[a[1]]||0):0,top=Math.max(c0,c1,0);
- const card=(id,i)=>{const n=cp[id]||0,other=i?c0:c1,tie=n>0&&n===other,rk=(i===0||tie)?1:2,gap=Math.abs(c0-c1),
-  up=(id in prev)&&n>prev[id],pct=top>0?Math.round(n/top*100):0;
-  const events=Number(stats.eventsByTeam&&stats.eventsByTeam[id])||0;
-  let st;if(!top)st=en?'Go for #1!':'¡A por la 1ª!';else if(tie)st=en?'TIE!':'¡EMPATE!';else if(rk===1)st=en?`LEADER +${gap}`:`¡LÍDER! +${gap}`;else st=en?`${gap} behind`:`a ${gap} 🏆 del líder`;
-  const live=act.includes(id);
-  const lb=rk===1?(en?'1ST PLACE':'PRIMER PUESTO'):(en?'2ND PLACE':'SEGUNDO PUESTO');
-  return `<div class="cc p${i+1} r${rk}${live?' on':''}${n?'':' z'}${up?' up':''}" data-team-id="${esc(id)}" aria-label="${lb} · ${esc(nom(id))}: ${n} copas, ${events} eventos"><span class="cc-lb">${lb}</span><span class="cc-rk">${rk===1?'🥇':'🥈'}</span>${i===0?'<span class="cc-cr">👑</span>':''}${live?`<span class="cc-live" title="${en?'Racing':'En pista'}"></span>`:''}<span class="cc-row"><span class="cc-fl">${ban(id)}</span><span class="cc-n d${String(n).length}">${n}</span></span><span class="cc-nm">${esc(nom(id))}</span><span class="cc-bar"><i style="width:${pct}%"></i></span><span class="cc-st">${st}</span><span class="cc-ev">⚡ ${events} ${en?'EVENTS':'EVENTOS'}</span>${up?'<b class="cc-plus">+1 🏆</b>':''}</div>`};
- const h=`<div class="hh">🏆 ${en?'CUPS':'COPAS'}${cn?' · '+esc(cn):''} <small class="cc-total-ev">⚡ ${Number(stats.ev)||0} ${en?'EVENTS':'EVENTOS'} VS</small></div>`+a.map(card).join('');
- if(h!==ult){ult=h;box.innerHTML=h;a.forEach(id=>{prev[id]=cp[id]||0})}}catch(e){}}
+ const ids=act.slice().sort((x,y)=>(cp[y]||0)-(cp[x]||0));
+ const rows=ids.map(id=>`<div class="cup-entry" data-team-id="${esc(id)}" aria-label="${esc(nom(id))}: ${Number(cp[id])||0} copas"><span class="cup-flag">${ban(id)}</span><span class="cup-name">${esc(nom(id))}</span><b class="cup-count">${Number(cp[id])||0}</b></div>`).join('');
+ const h=`<div class="hh">🏆 COPAS${cn?' · '+esc(cn):''}</div><div class="cup-list">${rows}</div>`;
+ if(h!==ult){ult=h;box.innerHTML=h}}catch(e){}}
 setInterval(pinta,1500);pinta();
 })();
 </script>
@@ -4434,9 +4424,9 @@ render();
 #cronoRegalos{position:static;flex:0 0 auto;margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:6px;pointer-events:none}
 #cronoRegalos .race-clock-group{display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto}
 #cronoRegalos .race-loop-buttons{display:flex;align-items:center;justify-content:center;gap:2px}
-#paraguayVsLoop,#honorGiftToggle,#switchTikTokUser{box-sizing:border-box;width:24px;height:18px;padding:0;border:1px solid #ffe14d;border-radius:4px;background:#28231a;color:#fff;font:12px/1 Inter,sans-serif;cursor:pointer;opacity:.75}
-#paraguayVsLoop.on,#honorGiftToggle.on{background:#176b35;box-shadow:0 0 5px rgba(61,220,90,.8);opacity:1}
-#paraguayVsLoop:focus-visible,#honorGiftToggle:focus-visible,#switchTikTokUser:focus-visible{outline:2px solid #fff;outline-offset:1px}
+#paraguayVsLoop,#honorGiftToggle,#switchTikTokUser,#donTortuOverlayToggle{box-sizing:border-box;width:24px;height:18px;padding:0;border:1px solid #ffe14d;border-radius:4px;background:#28231a;color:#fff;font:12px/1 Inter,sans-serif;cursor:pointer;opacity:.75}
+#paraguayVsLoop.on,#honorGiftToggle.on,#donTortuOverlayToggle.on{background:#176b35;box-shadow:0 0 5px rgba(61,220,90,.8);opacity:1}
+#paraguayVsLoop:focus-visible,#honorGiftToggle:focus-visible,#switchTikTokUser:focus-visible,#donTortuOverlayToggle:focus-visible{outline:2px solid #fff;outline-offset:1px}
 /* cronometro sin icono */
 #cronoRegalos #crono{box-sizing:border-box;height:26px;display:flex;align-items:center;gap:4px;padding:0 7px;border-radius:7px;background:#0b0b0b;border-style:solid;border-width:2px;font:800 15px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:.3px;white-space:nowrap;position:static;text-align:left;text-shadow:0 1px 2px #000}
 #cronoRegalos #crono{border-color:#5ec3f2;box-shadow:0 2px 5px rgba(0,0,0,.7),0 0 7px rgba(94,195,242,.5);color:#fff}
@@ -4457,6 +4447,31 @@ render();
  const loopButton=document.createElement('button');loopButton.id='paraguayVsLoop';loopButton.type='button';loopButton.textContent='🇵🇾';loopButton.title='Bucle del Superclásico paraguayo';loopButton.setAttribute('aria-label','Bucle del Superclásico paraguayo');
  const giftToggle=document.createElement('button');giftToggle.id='honorGiftToggle';giftToggle.type='button';giftToggle.textContent='⚽';giftToggle.title='Mostrar regalos de Honor';giftToggle.setAttribute('aria-label','Mostrar regalos de Honor');
  const switchUserButton=document.createElement('button');switchUserButton.id='switchTikTokUser';switchUserButton.type='button';switchUserButton.textContent='👤';switchUserButton.title='Cambiar al siguiente usuario guardado';switchUserButton.setAttribute('aria-label','Cambiar al siguiente usuario guardado');
+ const tortuToggle=document.createElement('button');tortuToggle.id='donTortuOverlayToggle';tortuToggle.type='button';tortuToggle.textContent='🐢';
+ window.updateDonTortuButton=enabled=>{
+  tortuToggle.classList.toggle('on',enabled);
+  tortuToggle.setAttribute('aria-pressed',String(enabled));
+  tortuToggle.title=enabled?'Desactivar voz y avatar de Don Tortu':'Activar voz y avatar de Don Tortu';
+  tortuToggle.setAttribute('aria-label',tortuToggle.title);
+ };
+ window.updateDonTortuButton(window.donTortuEnabled!==false);
+ window.addEventListener('voice-config-update',event=>{
+  if(typeof event.detail?.donTortuEnabled==='boolean')window.updateDonTortuButton(event.detail.donTortuEnabled);
+ });
+ tortuToggle.addEventListener('click',async()=>{
+  if(tortuToggle.disabled)return;
+  tortuToggle.disabled=true;
+  try{
+   const response=await fetch('/api/overlay/don-tortu',{method:'POST',headers:{'X-Overlay-Control':'don-tortu'}});
+   const result=await response.json();
+   if(!response.ok||result.ok!==true)throw new Error(result.message||`HTTP ${response.status}`);
+   window.setDonTortuEnabled(result.donTortuEnabled);
+   toast(result.donTortuEnabled?'Don Tortu activado':'Don Tortu desactivado','🐢');
+  }catch(error){
+   toast('No se pudo cambiar Don Tortu: '+error.message,'⚠️');
+   console.error('No se pudo cambiar Don Tortu desde las herramientas del overlay.',error);
+  }finally{setTimeout(()=>{tortuToggle.disabled=false},500)}
+ });
  switchUserButton.addEventListener('click',async()=>{
   if(switchUserButton.disabled)return;
   switchUserButton.disabled=true;
@@ -4474,7 +4489,7 @@ render();
    console.error('No se pudo cambiar al siguiente usuario guardado.',error);
   }finally{setTimeout(()=>{switchUserButton.disabled=false},1800)}
  });
- buttons.append(loopButton,giftToggle,switchUserButton);raceGroup.append(race,buttons);w.append(c,raceGroup);
+ buttons.append(loopButton,giftToggle,switchUserButton,tortuToggle);raceGroup.append(race,buttons);w.append(c,raceGroup);
  const ft=document.querySelector('#topbar .foot')||document.querySelector('.foot');if(ft)ft.appendChild(w);else document.getElementById('topbar').appendChild(w);
  let timerStartedAt=Date.now();
  const p=n=>String(n).padStart(2,'0');
@@ -4538,8 +4553,8 @@ render();
 <style id="orden-copas-honor">
 .side>#honor{order:-1}
 .side>#copas{order:1}
-/* COPAS conserva su altura; HONOR termina alineado con el contador de taps. */
-#copas{flex:none!important;height:178px!important}
+/* El panel de copas usa la misma altura medida para Honor. */
+#copas{flex:none!important;height:var(--honor-panel-height,auto)!important}
 /* HONOR de un solo puesto: avatar del ultimo que envio regalo, con su nombre y cantidad, en columna */
 #honor{padding:4px 3px 4px!important;border-width:2px!important;margin:0!important}
 #honor .hh{font-size:11px!important;margin-bottom:5px!important;letter-spacing:.7px!important}
@@ -4627,7 +4642,7 @@ setInterval(ajusta,500);ajusta();
 <style id="regalo-nombre">
 .ev .eb{white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis}</style>
 
-<!-- ===== COPAS: primer y segundo puesto con tarjetas del mismo tamaño; cada una identifica su puesto. ===== -->
+<!-- ===== COPAS: ajuste compacto con dos filas dentro de una sola caja. ===== -->
 <style id="copas-v32">
 #copas.cp2 .cc.p1,#copas.cp2 .cc.p2{flex:1 1 0;padding:9px 3px 4px;gap:3px}
 #copas.cp2 .cc-lb{order:-1;flex:none;max-width:100%;box-sizing:border-box;padding:2px 6px;border-radius:7px;background:#ffe14d;color:#3a2300;font:900 7.5px/1 Inter,sans-serif;letter-spacing:.1px;white-space:nowrap;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.5)}
@@ -4637,6 +4652,15 @@ setInterval(ajusta,500);ajusta();
 #copas.cp2 .cc-live{top:-4px;bottom:auto;right:26px}
 #copas.cp2 .cc-cr,#copas.cp2 .cc.p2 .cc-cr{left:auto;right:-5px;top:-13px;font-size:24px;transform:rotate(14deg);animation:ccBob2 1.6s ease-in-out infinite}
 @keyframes ccBob2{50%{transform:rotate(14deg) translateY(-3px)}}</style>
+<style id="copas-honor-row">
+#copas.cp2{flex:0 0 var(--honor-panel-height,auto)!important;height:var(--honor-panel-height,auto)!important;min-height:0!important;padding:5px!important;gap:4px!important;overflow:hidden!important}
+#copas.cp2 .cup-list{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:4px}
+#copas.cp2 .cup-entry{min-height:0;display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:5px;padding:3px 5px;border:1px solid rgba(255,225,77,.42);border-radius:8px;background:rgba(255,255,255,.07)}
+#copas.cp2 .cup-flag{width:30px;height:30px;display:grid;place-items:center}
+#copas.cp2 .cup-flag svg{width:28px;height:28px;border-radius:50%;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
+#copas.cp2 .cup-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 8px/1.1 Inter,sans-serif}
+#copas.cp2 .cup-count{color:#ffe14d;font:900 23px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+</style>
 <style id="honor-gami">
 #honor .sl.gm{position:relative;display:grid!important;grid-template-columns:52px minmax(0,1fr)!important;align-items:center!important;gap:4px!important;padding:4px!important;overflow:hidden;border:2px solid #ffe14d;background:linear-gradient(rgba(255,255,255,.1),rgba(0,0,0,.25))!important;box-shadow:0 0 10px 1px #ffe14d}
 #honor .avw{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px}
@@ -5757,9 +5781,9 @@ window.gamiVS={data:D,advance,curVS,addCup,setLoopEnabled:enabled=>{
 <script id="honor-height-to-taps-js">
 (function(){
 'use strict';
-const honor=document.getElementById('honor'),app=document.getElementById('app');
+const honor=document.getElementById('honor'),side=honor&&honor.parentElement,app=document.getElementById('app');
 const counters=[...document.querySelectorAll('.lane .hb')];
-if(!honor||!app||!counters.length)return;
+if(!honor||!side||!app||!counters.length)return;
 let frame=0;
 function update(){
  frame=0;
@@ -5768,7 +5792,7 @@ function update(){
  const top=honor.getBoundingClientRect().top;
  const bottom=Math.max(...counters.map(counter=>counter.getBoundingClientRect().bottom));
  const value=Math.max(0,Math.round((bottom-top)/scale)+8)+'px';
- if(honor.style.getPropertyValue('--honor-panel-height')!==value)honor.style.setProperty('--honor-panel-height',value);
+ if(side.style.getPropertyValue('--honor-panel-height')!==value)side.style.setProperty('--honor-panel-height',value);
 }
 function schedule(){if(!frame)frame=requestAnimationFrame(update)}
 window.addEventListener('resize',schedule,{passive:true});
