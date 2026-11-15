@@ -1162,9 +1162,9 @@ test('HonorBoard displays real gifts, deduplicates entries, and keeps test gifts
   assert.doesNotMatch(honorMarkup, /cdn\.example\.test\/rose\.png/);
   context.window.HonorBoard.setEventsPerMinute(1001);
   assert.match(honorMarkup, /cdn\.example\.test\/rose\.png/);
-  assert.equal(eventRate.textContent, '1001/min');
+  assert.equal(eventRate.textContent, '1001');
   context.handleLiveEntry({ type: 'chat', username: 'fan' });
-  assert.equal(eventRate.textContent, '1002/min');
+  assert.equal(eventRate.textContent, '1002');
   context.window.HonorBoard.onGift({ type: 'gift', username: 'ana', giftName: 'Rose', eventId: 'rate-gift', profilePictureUrl: 'https://example.test/ana.jpg' });
   context.window.HonorBoard.setEventsPerMinute(0);
   assert.match(honorMarkup, /@ana/);

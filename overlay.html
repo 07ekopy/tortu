@@ -830,7 +830,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div id="toast" role="status" aria-live="polite"></div>
 <!-- Monitor de unidades de negocio. Se mantiene el panel visual existente del overlay. -->
 <section id="stp" hidden role="dialog" aria-label="Monitor por unidad de negocio"><header><b>🐢 Monitor LIVE</b><span><button data-reset>↺ Reiniciar copas</button> <button data-close aria-label="Cerrar">✕</button></span></header><nav aria-label="Unidades de negocio"><button data-tab="eventos" title="Eventos">⚡ Eventos</button><button data-tab="usuarios" title="Usuarios">👤 Usuarios</button><button data-tab="voz" title="Voz en off y narrador">♫ Voz</button><button data-tab="regalos" title="Regalos">🎁 Regalos</button><button data-tab="equipos" title="Equipos">🐢 Equipos</button><button data-tab="torneos" title="Torneos">🏆 Torneos</button><button data-tab="estadisticas" title="Estadísticas">📊 Estad.</button><button data-tab="motor" title="Motor tiempo real">⚙ Motor</button><button data-tab="turbo-equipos" title="Turbo contador equipos">⚡ Turbo eq.</button><button data-tab="turbo-regalos" title="Turbo regalos">🎁 Turbo reg.</button><button data-tab="honor" title="Cuadro de honor">🥇 Honor</button><button data-tab="acciones" title="CTAs y acciones">🛠 Acciones</button></nav><div class="stb"></div></section>
-<span class="overlay-version" aria-label="Versión __TORTUWORLD_PACKAGE_VERSION__">v__TORTUWORLD_PACKAGE_VERSION__</span><span class="event-rate" id="eventRate" aria-label="Eventos recibidos por minuto" title="Eventos recibidos en el último minuto">0/min</span>
+<span class="overlay-version" aria-label="Versión __TORTUWORLD_PACKAGE_VERSION__">v__TORTUWORLD_PACKAGE_VERSION__</span><span class="event-rate" id="eventRate" aria-label="Eventos recibidos por minuto" title="Eventos recibidos en el último minuto">0</span>
 </main>
 <script>
 /* ############ SECCION 1: MOTOR DEL JUEGO (datos, carriles, puntos, conexion SSE, estadisticas) ############ */
@@ -3753,7 +3753,7 @@ const HB=window.HonorBoard={
  setEventsPerMinute(value){
   const wasEligible=showGiftDetails&&eventsThisMinute>1000;
   eventsThisMinute=Math.max(0,Math.floor(Number(value)||0));
-  if(eventRate){eventRate.textContent=eventsThisMinute+'/min';eventRate.setAttribute('aria-label',`${eventsThisMinute} eventos recibidos en el último minuto`)}
+  if(eventRate){eventRate.textContent=String(eventsThisMinute);eventRate.setAttribute('aria-label',`${eventsThisMinute} eventos recibidos en el último minuto`)}
   if(!race.last&&wasEligible!==(showGiftDetails&&eventsThisMinute>1000)){idleKey='rose';paintIdle();scheduleRotation()}
  },
  handleSse(type,data){
@@ -3801,7 +3801,7 @@ fetch('/api/gifts/catalog',{cache:'no-store'}).then(response=>{if(!response.ok)t
 <script>
 (function(){
 const side=document.querySelector('.side');if(!side)return;
-const box=document.createElement('section');box.id='copas';box.classList.add('cp2');box.setAttribute('aria-label','Copas por club');
+const box=document.createElement('section');box.id='copas';box.classList.add('cp2');box.setAttribute('aria-label','Copas por país');
 const t3=document.getElementById('top3');side.insertBefore(box,t3?t3.nextSibling:null);
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nom=id=>{try{const n=tournamentItem(id).n;return n[0]+n.slice(1).toLowerCase()}catch(e){return String(id).toUpperCase()}};
@@ -3817,8 +3817,9 @@ cp=Object.assign({},stats.cups&&typeof stats.cups==='object'?stats.cups:currentC
 act.forEach(id=>{cp[id]=Math.max(Number(cp[id])||0,Number(currentCp[id])||0)});
  try{const ix=CLASSIC_FIXTURES.findIndex(f=>f.slice().sort().join('|')===ck);cn=ix>=0?CLASSIC_NAMES[ix]:''}catch(e){}
  const ids=act.slice().sort((x,y)=>(cp[y]||0)-(cp[x]||0));
- const rows=ids.map(id=>`<div class="cup-entry" data-team-id="${esc(id)}" aria-label="${esc(nom(id))}: ${Number(cp[id])||0} copas"><span class="cup-flag">${ban(id)}</span><span class="cup-name">${esc(nom(id))}</span><b class="cup-count">${Number(cp[id])||0}</b></div>`).join('');
- const h=`<div class="hh">🏆 COPAS${cn?' · '+esc(cn):''}</div><div class="cup-list">${rows}</div>`;
+ const rows=ids.map(id=>`<div class="cup-entry" data-team-id="${esc(id)}" title="${esc(nom(id))}" aria-label="${esc(nom(id))}: ${Number(cp[id])||0} copas"><span class="cup-flag">${ban(id)}</span><b class="cup-count">${Number(cp[id])||0}</b></div>`).join('');
+ box.title=cn?'Copas · '+cn:'Copas acumuladas por país';
+ const h=`<div class="hh">🏆 COPAS</div><div class="cup-list">${rows}</div>`;
  if(h!==ult){ult=h;box.innerHTML=h}}catch(e){}}
 setInterval(pinta,1500);pinta();
 })();
@@ -4654,12 +4655,12 @@ setInterval(ajusta,500);ajusta();
 @keyframes ccBob2{50%{transform:rotate(14deg) translateY(-3px)}}</style>
 <style id="copas-honor-row">
 #copas.cp2{flex:0 0 var(--honor-panel-height,auto)!important;height:var(--honor-panel-height,auto)!important;min-height:0!important;padding:5px!important;gap:4px!important;overflow:hidden!important}
-#copas.cp2 .cup-list{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:4px}
-#copas.cp2 .cup-entry{min-height:0;display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:5px;padding:3px 5px;border:1px solid rgba(255,225,77,.42);border-radius:8px;background:rgba(255,255,255,.07)}
-#copas.cp2 .cup-flag{width:30px;height:30px;display:grid;place-items:center}
-#copas.cp2 .cup-flag svg{width:28px;height:28px;border-radius:50%;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
-#copas.cp2 .cup-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 8px/1.1 Inter,sans-serif}
-#copas.cp2 .cup-count{color:#ffe14d;font:900 23px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+#copas.cp2 .cup-list{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:3px}
+#copas.cp2 .cup-entry{min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;padding:2px;border:1px solid rgba(255,225,77,.42);border-radius:7px;background:rgba(255,255,255,.07)}
+#copas.cp2 .cup-flag{width:20px;height:20px;flex:none;display:grid;place-items:center}
+#copas.cp2 .cup-flag svg{width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.8)}
+#copas.cp2 .cup-count{color:#ffe14d;font:900 16px/1 Inter,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+#copas.cp2 .cup-entry[title]:hover{border-color:#ffe14d}
 </style>
 <style id="honor-gami">
 #honor .sl.gm{position:relative;display:grid!important;grid-template-columns:52px minmax(0,1fr)!important;align-items:center!important;gap:4px!important;padding:4px!important;overflow:hidden;border:2px solid #ffe14d;background:linear-gradient(rgba(255,255,255,.1),rgba(0,0,0,.25))!important;box-shadow:0 0 10px 1px #ffe14d}
