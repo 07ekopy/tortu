@@ -829,7 +829,7 @@ test('overlay retains the active VS until inactivity and resets cups only on the
   ]);
 });
 
-test('gift honor clears the avatar on race start and displays the selected gift icon', () => {
+test('gift honor keeps the rose in place and shows the latest sender below it', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const marker = "const box=document.createElement('section');box.id='honor'";
   const markerIndex = html.indexOf(marker);
@@ -878,14 +878,18 @@ test('gift honor clears the avatar on race start and displays the selected gift 
   };
   runInNewContext(script, context);
 
-  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
   assert.match(honorMarkup, /class="honor-avatar-column"/);
   assert.match(honorMarkup, /class="honor-gifts-column"/);
+  assert.doesNotMatch(honorMarkup, /class="honor-sender"/);
   assert.match(honorMarkup, /Diamante/);
   assert.doesNotMatch(honorMarkup, /@ana/);
   assert.doesNotMatch(honorMarkup, /—/);
   context.handleLiveEntry({ bot: false, type: 'gift', username: 'ana', giftName: 'Diamond', activityCount: 1 });
-  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
+  assert.match(honorMarkup, /class="honor-sender"/);
+  assert.match(honorMarkup, /class="honor-username">@ana/);
+  assert.ok(honorMarkup.indexOf('honor-rose') < honorMarkup.indexOf('honor-sender') && honorMarkup.indexOf('honor-sender') < honorMarkup.indexOf('honor-username'));
   context.handleLiveEntry({
     bot: false,
     type: 'follow',
@@ -895,9 +899,9 @@ test('gift honor clears the avatar on race start and displays the selected gift 
   assert.match(honorMarkup, /src="https:\/\/example\.test\/ana\.jpg"/);
   context.reset();
   assert.match(honorMarkup, /Habilitado/);
-  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">💎/);
+  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
   assert.doesNotMatch(honorMarkup, /@ana/);
-  assert.match(html, /class="av gift-icon"/);
+  assert.match(html, /class="av gift-icon honor-rose"/);
 });
 
 test('team event totals reset on each race and cup cards omit audience', () => {
@@ -1270,8 +1274,9 @@ test('honor panel height aligns with the bottom of the team tap counters', () =>
 
 test('honor panel displays a pulsing rose', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
-  assert.match(html, /class="honor-rose" aria-hidden="true">🌹/);
+  assert.match(html, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
   assert.match(html, /#honor \.honor-rose\{[^}]*animation:honorRoseBeat/);
+  assert.match(html, /#honor \.sl\.gm \.honor-rose,#honor \.sl\.vac \.honor-rose/);
   assert.match(html, /@keyframes honorRoseBeat/);
   assert.match(html, /#honor \.honor-rose\{animation:none!important\}/);
 });
@@ -1321,7 +1326,7 @@ test('honor rotates only enabled gifts at the configured interval', () => {
 
   assert.equal(intervals.length, 2);
   assert.match(honorMarkup, /Rosita/);
-  assert.match(honorMarkup, /class="av gift-icon" aria-hidden="true">🌹/);
+  assert.match(honorMarkup, /class="av gift-icon honor-rose" aria-hidden="true">🌹/);
   context.reset();
   assert.match(honorMarkup, /Rosita/);
   assert.doesNotMatch(honorMarkup, /@ana/);
@@ -1338,10 +1343,10 @@ test('honor rotates only enabled gifts at the configured interval', () => {
   assert.match(honorMarkup, /Corazón/);
   assert.match(honorMarkup, /@luz/);
   intervals[1]();
-  assert.doesNotMatch(honorMarkup, /@luz/);
+  assert.match(honorMarkup, /@luz/);
   assert.match(honorMarkup, /Cohete/);
   intervals[1]();
-  assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /@luz/);
   assert.match(honorMarkup, /Rosita/);
   assert.match(honorMarkup, /1 🪙 ×1/);
   intervals[1]();
@@ -1359,7 +1364,7 @@ test('honor rotates only enabled gifts at the configured interval', () => {
       { key: 'rose', name: 'Rosita', value: 1, enabled: true, aliases: ['rose'] },
     ]
   } });
-  assert.match(honorMarkup, /@ana/);
+  assert.match(honorMarkup, /@sol/);
   assert.match(honorMarkup, /Rosita/);
   assert.match(honorMarkup, /1 🪙 ×1/);
 
