@@ -813,7 +813,9 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.ok(script);
     assert.doesNotThrow(() => new Function(script));
     assert.match(html, /id="eventList"/);
+    assert.match(html, /id="clearEvents"/);
     assert.match(html, /id="applyEventFilters"/);
+    assert.match(html, /\.event-row\[hidden\]\{display:none\}/);
     assert.match(html, /id="copyEvents"/);
     assert.match(html, /ÚLTIMOS 50/);
     assert.match(html, /<aside class="event-filters" aria-label="Filtrar eventos">/);
@@ -873,6 +875,21 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     submitHandler({ preventDefault() { submitPrevented = true; } });
     assert.equal(submitPrevented, true);
     assert.equal(filtersApplied, true);
+    const clearCode = script.match(/\$\('#clearEvents'\)\.addEventListener\('click',\(\)=>\{[\s\S]*?\}\);/)?.[0];
+    assert.ok(clearCode);
+    let clearHandler, eventListCleared = false;
+    const clearTargets = {
+      '#eventList': { replaceChildren() { eventListCleared = true; } },
+      '#eventEmpty': { hidden: true, textContent: '' },
+      '#eventMessage': { textContent: '' }
+    };
+    new Function('$', clearCode)(selector => selector === '#clearEvents'
+      ? { addEventListener(_type, handler) { clearHandler = handler; } }
+      : clearTargets[selector]);
+    clearHandler();
+    assert.equal(eventListCleared, true);
+    assert.equal(clearTargets['#eventEmpty'].hidden, false);
+    assert.match(clearTargets['#eventMessage'].textContent, /limpiada/);
     const filterCode = script.match(/function applyEventFilters\(\)\{[\s\S]*?\n\}/)?.[0];
     assert.ok(filterCode);
     const filterInputs = ['all', 'member', 'chat', 'like', 'follow', 'share', 'gift'].map(type => ({
@@ -909,9 +926,10 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.match(userPanel, /id="status"/);
     assert.match(userPanel, /<form id="connect"/);
     assert.match(userPanel, /name="username"/);
-    for (const unit of ['eventos', 'usuarios', 'regalos', 'equipos', 'torneos', 'estadisticas', 'motor', 'turbo-equipos', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
+    for (const unit of ['eventos', 'usuarios', 'regalos', 'torneos', 'estadisticas', 'motor', 'turbo-regalos', 'voz', 'honor', 'narrador', 'acciones', 'logs']) {
       assert.match(html, new RegExp(`data-unit="${unit}"`));
     }
+    assert.doesNotMatch(html, /data-unit="(?:equipos|turbo-equipos)"/);
     assert.match(html, /id="serverLogs"/);
     assert.match(html, /Logs técnicos/);
     const vsPanel = [...html.matchAll(/<section class="panel business-panel" data-units="torneos">([\s\S]*?)<\/section>/g)]
@@ -919,12 +937,17 @@ test('backend exposes business-unit buttons and live motor telemetry', async () 
     assert.ok(vsPanel);
     assert.match(vsPanel, /Lista de carreras/);
     assert.match(vsPanel, /id="raceList"/);
-    const teamsPanel = html.match(/<section class="panel business-panel" data-units="equipos">([\s\S]*?)<\/section>/)?.[1];
+    const teamsPanel = [...html.matchAll(/<section class="panel business-panel" data-units="torneos">([\s\S]*?)<\/section>/g)]
+      .map(match => match[1]).find(panel => panel.includes('catálogo de equipos'));
     assert.ok(teamsPanel);
-    assert.match(teamsPanel, /Catálogo de banderas/);
+    assert.match(teamsPanel, /Banderas de los equipos/);
+    const teamTurboPanel = [...html.matchAll(/<section class="panel business-panel" data-units="torneos">([\s\S]*?)<\/section>/g)]
+      .map(match => match[1]).find(panel => panel.includes('id="teamTelemetry"'));
+    assert.ok(teamTurboPanel);
+    assert.match(teamTurboPanel, /Avance del turbo por taps/);
     assert.match(script, /dataset\.vsPopularKey=duel\.k/);
-    assert.match(script, /unit==='torneos'\)loadVsConfig\(\)/);
-    assert.match(script, /unit==='equipos'\)loadTeamCatalog\(\)/);
+    assert.match(script, /unit==='torneos'\)\{loadVsConfig\(\);loadTeamCatalog\(\)\}/);
+    assert.doesNotMatch(script, /unit==='equipos'/);
     const navigationStart = script.indexOf('const unitButtons=');
     const navigationEnd = script.indexOf("$('#clock').textContent");
     const navigationCode = script.slice(navigationStart, navigationEnd);
