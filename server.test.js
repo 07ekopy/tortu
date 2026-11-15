@@ -62,6 +62,7 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   let now = 1000;
   const spoken = [];
   const listeners = new Map();
+  let donTortuEnabled = true;
   const window = {
     speechSynthesis: {
       speak: utterance => spoken.push(utterance.text),
@@ -71,6 +72,7 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
     },
     liveEventMonitor: { receive(event) { return event; } },
     I18N: { en: false },
+    setDonTortuEnabled: enabled => { donTortuEnabled = enabled; },
     addEventListener: (type, listener) => listeners.set(type, listener)
   };
   class FakeDate extends Date {
@@ -101,8 +103,59 @@ test('voice phrase cache blocks normalized repeats until the configured minute e
   now += 1;
   window.liveEventMonitor.receive({ type: 'gift', displayName: 'Ana', username: 'ana', giftDiamonds: 1 });
   assert.equal(window.getVoiceMonitorState().queue.length, 1);
-  listeners.get('voice-config-update')({ detail: { repeatCooldownMinutes: 2 } });
+  listeners.get('voice-config-update')({ detail: { repeatCooldownMinutes: 2, donTortuEnabled: false } });
   assert.equal(window.getVoiceMonitorState().phraseCooldownMs, 120000);
+  assert.equal(donTortuEnabled, false);
+});
+
+test('backend voice setting controls Don Tortu avatar and speech', () => {
+  const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
+  const setSource = html.match(/function setDonTortuEnabled\(enabled\)\{[\s\S]*?\n\}/)?.[0];
+  assert.ok(setSource);
+  let saved = 0, cancelled = 0, ducked = 0;
+  const nameplate = { hidden: false, classList: { contains: name => name === 'plate' } };
+  const avatar = {
+    hidden: false,
+    nextElementSibling: nameplate,
+    classList: { add() {}, remove() {} }
+  };
+  const context = {
+    window: {},
+    P: { vo: 1 },
+    dt0: avatar,
+    voiceQueue: [1],
+    giftQueue: [1],
+    chatQueue: [1],
+    narratorQueue: [1],
+    activeVoiceRequest: {},
+    giftSpeaking: true,
+    giftSpeechGeneration: 0,
+    talkT: 1,
+    SS: { cancel() { cancelled++; } },
+    A: { duck(value) { ducked = value; } },
+    save() { saved++; },
+    clearTimeout() {},
+    console
+  };
+  runInNewContext(`${setSource}; globalThis.toggleDonTortu=setDonTortuEnabled;`, context);
+  context.toggleDonTortu(false);
+  assert.equal(context.P.vo, 0);
+  assert.equal(avatar.hidden, true);
+  assert.equal(nameplate.hidden, true);
+  assert.equal(context.voiceQueue.length + context.giftQueue.length + context.chatQueue.length + context.narratorQueue.length, 0);
+  assert.equal(context.activeVoiceRequest, null);
+  assert.equal(context.giftSpeaking, false);
+  assert.equal(context.giftSpeechGeneration, 1);
+  assert.equal(cancelled, 1);
+  assert.equal(ducked, 0);
+  context.toggleDonTortu(true);
+  assert.equal(context.P.vo, 1);
+  assert.equal(avatar.hidden, false);
+  assert.equal(nameplate.hidden, false);
+  assert.equal(saved, 2);
+  assert.match(html, /id="donTortuAvatar"[^>]+aria-label="Don Tortu"/);
+  assert.match(html, /document\.querySelector\('#donTortuAvatar'\)/);
+  assert.match(html, /P\.vo=window\.donTortuEnabled\?1:0/);
 });
 
 test('deployment check announces a detected update after reload and reloads stale overlays once', async () => {
@@ -189,6 +242,12 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.equal(lockedVoiceConfig.status, 401);
     const lockedLogs = await fetch(`${baseUrl}/api/admin/logs`);
     assert.equal(lockedLogs.status, 401);
+    const lockedDiagnostics = await fetch(`${baseUrl}/api/admin/diagnostic-mode`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    assert.equal(lockedDiagnostics.status, 401);
     const lockedUsernames = await fetch(`${baseUrl}/api/admin/usernames`);
     assert.equal(lockedUsernames.status, 401);
     const lockedConnect = await fetch(`${baseUrl}/api/connect`, {
@@ -219,7 +278,25 @@ test('backend login protects the panel and admin APIs until a session cookie is 
     assert.equal(unlockedApi.status, 200);
     const unlockedLogs = await fetch(`${baseUrl}/api/admin/logs?limit=20`, { headers: { cookie } });
     assert.equal(unlockedLogs.status, 200);
-    assert.deepEqual((await unlockedLogs.json()).logs, []);
+    const initialLogs = await unlockedLogs.json();
+    assert.deepEqual(initialLogs.logs, []);
+    assert.equal(initialLogs.diagnostic.active, false);
+    const enableDiagnostics = await fetch(`${baseUrl}/api/admin/diagnostic-mode`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    assert.equal(enableDiagnostics.status, 200);
+    assert.equal((await enableDiagnostics.json()).active, true);
+    const diagnosticsAfterEnable = await fetch(`${baseUrl}/api/admin/logs`, { headers: { cookie } });
+    assert.equal((await diagnosticsAfterEnable.json()).diagnostic.active, true);
+    const disableDiagnostics = await fetch(`${baseUrl}/api/admin/diagnostic-mode`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    assert.equal(disableDiagnostics.status, 200);
+    assert.equal((await disableDiagnostics.json()).active, false);
     const unlockedUsernames = await fetch(`${baseUrl}/api/admin/usernames`, { headers: { cookie } });
     assert.equal(unlockedUsernames.status, 200);
     const usernameList = await unlockedUsernames.json();
@@ -557,7 +634,9 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
 
     const defaults = await fetch(`${baseUrl}/api/admin/voice-config`, { headers });
     assert.equal(defaults.status, 200);
-    assert.equal((await defaults.json()).repeatCooldownMinutes, 1);
+    const defaultConfig = await defaults.json();
+    assert.equal(defaultConfig.repeatCooldownMinutes, 1);
+    assert.equal(defaultConfig.donTortuEnabled, false);
 
     const invalid = await fetch(`${baseUrl}/api/admin/voice-config`, {
       method: 'POST',
@@ -571,16 +650,50 @@ test('voice repeat cooldown is configurable in minutes and reaches the overlay A
       body: JSON.stringify({ repeatCooldownMinutes: 1441 })
     });
     assert.equal(tooLong.status, 400);
+    const invalidToggle = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ repeatCooldownMinutes: 5, donTortuEnabled: 'false' })
+    });
+    assert.equal(invalidToggle.status, 400);
 
     const saved = await fetch(`${baseUrl}/api/admin/voice-config`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ repeatCooldownMinutes: 5 })
+      body: JSON.stringify({ repeatCooldownMinutes: 5, donTortuEnabled: false })
     });
     assert.equal(saved.status, 200);
-    assert.equal((await saved.json()).repeatCooldownMinutes, 5);
+    const savedConfig = await saved.json();
+    assert.equal(savedConfig.repeatCooldownMinutes, 5);
+    assert.equal(savedConfig.donTortuEnabled, false);
+    const enabled = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ donTortuEnabled: true })
+    });
+    assert.equal(enabled.status, 200);
+    assert.equal((await enabled.json()).donTortuEnabled, true);
+    const savedCooldown = await fetch(`${baseUrl}/api/admin/voice-config`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ repeatCooldownMinutes: 5 })
+    });
+    assert.equal((await savedCooldown.json()).donTortuEnabled, true);
     const overlayConfig = await fetch(`${baseUrl}/api/voice-priority`);
-    assert.equal((await overlayConfig.json()).repeatCooldownMinutes, 5);
+    const overlayVoice = await overlayConfig.json();
+    assert.equal(overlayVoice.repeatCooldownMinutes, 5);
+    assert.equal(overlayVoice.donTortuEnabled, true);
+    const toolsResponse = await fetch(`${baseUrl}/api/game-tools/events`);
+    const toolsReader = toolsResponse.body.getReader();
+    const toolsDecoder = new TextDecoder();
+    let toolsFrames = '';
+    while (!toolsFrames.includes('event: voice-config')) {
+      const { value, done } = await toolsReader.read();
+      assert.equal(done, false);
+      toolsFrames += toolsDecoder.decode(value, { stream: true });
+    }
+    assert.match(toolsFrames, /"donTortuEnabled":true/);
+    await toolsReader.cancel();
   } finally {
     if (hadPreviousState) {
       await fetch(`${baseUrl}/api/state/cluss.voice`, {
@@ -800,6 +913,7 @@ test('team event totals reset on each race and cup cards omit audience', () => {
 });
 
 test('backend exposes business-unit buttons, renders TikTok avatar URLs, and shows live motor telemetry', async () => {
+  const overlay = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   const previousToken = process.env.BACKEND_ADMIN_TOKEN;
   process.env.BACKEND_ADMIN_TOKEN = 'motor-test-token';
   const server = createServer((req, res) => void handle(req, res));
@@ -946,6 +1060,24 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
     assert.doesNotMatch(html, /data-unit="(?:equipos|turbo-equipos)"/);
     assert.match(html, /id="serverLogs"/);
     assert.match(html, /Logs técnicos/);
+    assert.match(html, /id="copyTechnicalLogs"/);
+    assert.match(html, /id="toggleAllLogs"/);
+    assert.match(script, /\/api\/admin\/diagnostic-mode/);
+    const usersPanel = html.match(/<section class="panel business-panel" data-units="usuarios">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(usersPanel);
+    assert.match(usersPanel, /id="donTortuToggle"[^>]+class="don-tortu-toggle off"/);
+    assert.match(usersPanel, /aria-pressed="false" aria-label="Don Tortu desactivado" disabled>Don Tortu: DESACTIVADO/);
+    assert.match(script, /admin\('\/api\/admin\/voice-config',\{donTortuEnabled:!donTortuEnabled\}\)/);
+    assert.match(script, /classList\.toggle\('on',donTortuEnabled\)/);
+    assert.match(script, /classList\.toggle\('off',!donTortuEnabled\)/);
+    assert.match(html, /don-tortu-toggle\.off\{background:#a8323c\}/);
+    assert.match(html, /don-tortu-toggle\.on\{background:#238447\}/);
+    assert.match(readFileSync(new URL('./server.js', import.meta.url), 'utf8'), /TortuWorld v\$\{PACKAGE_VERSION\} escuchando/);
+    const voicePanel = html.match(/<section class="panel business-panel" data-units="voz">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(voicePanel);
+    assert.doesNotMatch(voicePanel, /donTortuEnabled/);
+    assert.match(overlay, /id="donTortuAvatar"[^>]+hidden/);
+    assert.match(overlay, /source\.addEventListener\('diagnostic-mode'/);
     const vsPanel = [...html.matchAll(/<section class="panel business-panel" data-units="torneos">([\s\S]*?)<\/section>/g)]
       .map(match => match[1]).find(panel => panel.includes('Lista de carreras'));
     assert.ok(vsPanel);
@@ -982,9 +1114,10 @@ test('backend exposes business-unit buttons, renders TikTok avatar URLs, and sho
       querySelectorAll(selector) { return selector === '[data-unit]' ? buttons : panels; },
       querySelector(selector) { return selector === '#businessUnits' ? navigation : null; }
     };
-    new Function('document', '$', 'loadTechnicalLogs', navigationCode)(
+    new Function('document', '$', 'loadTechnicalLogs', 'loadVoice', navigationCode)(
       mockDocument,
       selector => mockDocument.querySelector(selector),
+      () => {},
       () => {}
     );
     const clickUnit = unit => navigationClick({

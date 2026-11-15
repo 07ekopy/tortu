@@ -41,7 +41,7 @@
   POST   /api/country/cup                  body {countryCode}; suma una copa solo para uno de los 21 codigos aceptados.
   POST   /api/admin/tournament-enabled     body {enabled}; habilita/deshabilita el registro de votos (admin).
   POST   /api/admin/game-settings          body {giftTurboProgress,tapTurboProgress}; ambos 0-100 (admin).
-  POST   /api/admin/voice-config           body {repeatCooldownMinutes}; entero de 1 a 1440 (admin).
+  POST   /api/admin/voice-config           body {repeatCooldownMinutes,donTortuEnabled}; cooldown 1-1440 min y voz/avatar de Don Tortu.
   POST   /api/admin/game-tools/reset        reinicia cronometro y contador de regalos (admin).
   POST   /api/admin/game-command           body {command}; solo refresh, turbo-down o turbo-up (admin).
   POST   /api/admin/reconnect              inicia un nuevo ciclo de reconexion (admin).
@@ -61,7 +61,7 @@
   GAME-TOOLS SSE (GET /api/game-tools/events), eventos con data JSON:
     game-settings  {giftTurboProgress, tapTurboProgress}   porcentajes 0-100 del turbo por regalo y por taps (predeterminados 6 y 20).
     game-tools     {timerStartedAt}                        entero en ms: instante de inicio del cronometro del overlay.
-    voice-config   {repeatCooldownMinutes}                  tiempo de antirrepeticion de voz en minutos.
+    voice-config   {repeatCooldownMinutes,donTortuEnabled}   tiempo de antirrepeticion y estado de Don Tortu.
     game-command   {command}                               valores que el frontend entiende: 'refresh' (recarga la pagina), 'turbo-down', 'turbo-up'. El servidor solo debe enviar los de su lista permitida.
   HEARTBEAT (POST /api/game-tools/overlay-heartbeat): cada 20 s, al cambiar la visibilidad de la pestana y al cerrar (visible:false, keepalive). clientId = UUID generado por el overlay. Activo = senal visible en los ultimos 90 s.
 
@@ -795,7 +795,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <div class="fan-alerts" id="event-alerts" aria-hidden="true"></div>
 <div class="side">
 <div class="bub" id="bub" aria-live="polite">¡Y ARRANCAN LAS TORTUGAS!</div>
-<svg width="64" height="64" viewBox="0 0 84 84" role="img" aria-label="Avatar de Don Tortu, el relator (tortuga)">
+<svg id="donTortuAvatar" width="64" height="64" viewBox="0 0 84 84" role="img" aria-label="Don Tortu" hidden>
 <defs><radialGradient id="sp" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#3f2713"/></radialGradient><clipPath id="spc"><circle cx="42" cy="42" r="40"/></clipPath></defs>
 <circle cx="42" cy="42" r="40" fill="url(#sp)" stroke="#f1e8d6" stroke-width="3"/>
 <g clip-path="url(#spc)">
@@ -814,7 +814,7 @@ document.addEventListener('visibilitychange',function(){if(document.hidden)flush
 <circle cx="40" cy="49" r="1" fill="#2f7d32"/><circle cx="44" cy="49" r="1" fill="#2f7d32"/>
 <path class="mo" d="M35 54 Q42 61 49 54" fill="none" stroke="#2a1d14" stroke-width="2.4" stroke-linecap="round"/><ellipse class="mo2" cx="42" cy="57" rx="6" ry="4" fill="#7a1f1f" stroke="#2a1d14" stroke-width="2" display="none"/>
 </svg>
-<span class="plate" style="padding:4px 10px;font-size:12px">DON TORTU</span>
+<span class="plate" style="padding:4px 10px;font-size:12px" hidden>DON TORTU</span>
 <div class="top3" id="top3" role="group" aria-label="Copas por club"></div>
 </div>
 <div class="win" id="win" role="alertdialog" aria-label="Ganador"></div>
@@ -1658,6 +1658,7 @@ window.liveEventMonitor={
 };
 const source=new EventSource('/api/events');
 source.addEventListener('status',event=>{const payload=JSON.parse(event.data);setConnection(payload);recordReceivedEvent('status',payload)});
+source.addEventListener('diagnostic-mode',event=>{const payload=JSON.parse(event.data);window.liveEventMonitor.setDiagnosticMode(payload.active===true)});
 source.addEventListener('update',event=>window.liveEventMonitor.receive(JSON.parse(event.data)));
 source.addEventListener('motor-state',event=>{window.serverMotorSnapshot=JSON.parse(event.data)});
 source.onerror=()=>{const status={connected:false,status:'reconnecting'};setConnection(status);recordReceivedEvent('connection',status)};
@@ -1688,6 +1689,9 @@ update();
 /* SCRIPT 2 = CAPAS SOBRE EL MOTOR: audio, XP/MVP, enganches a eventos reales, nido de hinchas, corazon, turbo, voz del relator. Cada capa envuelve una funcion del motor (patron _original + wrapper): el ORDEN de los wrappers importa. */
 const P=window.P={mus:1,sfx:1,xp:0,wins:[0,0],fx:0,cp:{ol:0,cp:0,li:0,gu:0,lu:0,na:0,sa:0,to:0},races:0,ach:{},tournamentMode,countryPopularity,countryEntrants,tournamentInteractions};
 try{Object.assign(P,SRV.get('cluss.v1',{}))}catch(e){}
+const donTortuConfig=SRV.get('cluss.voice',{});
+window.donTortuEnabled=donTortuConfig.donTortuEnabled===true;
+P.vo=window.donTortuEnabled?1:0;
 P.cp=Object.assign({ol:0,cp:0,li:0,gu:0,lu:0,na:0,sa:0,to:0},P.cp||{});
 P.cl=P.cl&&typeof P.cl==='object'?P.cl:{}; /* copas POR CLASICO: P.cl['id1|id2'][idClub]=copas (ids ordenados). Argentina tiene copas separadas en cada uno de sus clasicos */
 P.tournamentMode=tournamentMode;
@@ -2564,7 +2568,7 @@ function speak(text,sub,force,team,onDone,type='other'){
  }catch(e){return false}
 }
 window.TORTUWORLD_SPEAK=text=>speak(text,null,false);
-const dt0=document.querySelector('.side>svg');let talkT;
+const dt0=document.querySelector('#donTortuAvatar');let talkT;
 const narratorQueue=[];
 let narratorLastSpoken=-1e9;
 function showNarrator(team){}
@@ -2614,9 +2618,24 @@ setInterval(()=>{
 function talk(ms,team){
  if(team==null){dt0.classList.add('talk');clearTimeout(talkT);talkT=setTimeout(()=>dt0.classList.remove('talk'),ms);return}
 }
+function setDonTortuEnabled(enabled){
+ if(typeof enabled!=='boolean')return;
+ window.donTortuEnabled=enabled;P.vo=enabled?1:0;
+ dt0.hidden=!enabled;
+ const nameplate=dt0.nextElementSibling;
+ if(nameplate&&nameplate.classList.contains('plate'))nameplate.hidden=!enabled;
+ if(!enabled){
+  voiceQueue.length=0;giftQueue.length=0;chatQueue.length=0;narratorQueue.length=0;
+  activeVoiceRequest=null;giftSpeaking=false;giftSpeechGeneration++;
+  try{SS&&SS.cancel();A.duck(0)}catch(e){}
+  dt0.classList.remove('talk');clearTimeout(talkT);
+ }
+ save();
+}
+window.setDonTortuEnabled=setDonTortuEnabled;
 const _say=say;
 say=function(t){
- _say(t);talk(1400);
+ _say(t);if(P.vo)talk(1400);else{dt0.classList.remove('talk');clearTimeout(talkT)}
  if(!over&&P.vo&&/toma la delantera/.test(t)&&performance.now()-vLast>8000)
   speak(t.replace(/\s*\+\d+/,'').replace(/[A-ZÁÉÍÓÚÑ]{3,}/g,w=>w[0]+w.slice(1).toLowerCase()),null,false);
 };
@@ -2684,7 +2703,7 @@ let vPrimed=false;
 /* ===== AJUSTES FIJOS POR PARTIDA (regla 10): voz en off y efectos SIEMPRE activos; musica de fondo SIEMPRE apagada.
  Se aplica al abrir el overlay y al empezar cada ronda, aunque se hubiera cambiado a mano o quedara guardado de antes. ===== */
 function ajustesDePartida(){
- P.vo=1;P.sfx=1;P.mus=0;save();   /* voz y efectos ON · musica OFF */
+ P.vo=window.donTortuEnabled===false?0:1;P.sfx=1;P.mus=0;save();   /* Don Tortu respeta backend; efectos ON y musica OFF */
  A.apply();
 }
 ajustesDePartida();
@@ -5277,7 +5296,7 @@ let TB={trackMeters:100,repeatCooldownMinutes:1,levels:[
  {id:'chat',priority:2,ttlMs:20000,max:3,maxChars:140,say:'{user} dice: {text}'},
  {id:'action',priority:3,ttlMs:12000,max:3,coalesceMs:8000,say:{like:'{user}, gracias por tus likes',follow:'Gracias {user} por seguirnos',share:'Gracias {user} por compartir'}},
  {id:'match',priority:4,ttlMs:8000,max:1,everyMs:14000,quietMs:3500,say:{start:'Arranca la carrera. La meta está a {track} metros.',normal:'{lead} va a {leadM} metros y {other} a {otherM}. Faltan {left} metros para la meta.',final:'¡{lead} está a {left} metros de la meta!',win:'¡Gana {lead}! Llegó a los {track} metros.'}}]};
-fetch('/api/voice-priority').then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.levels)&&j.levels.length)TB=j;ensureLevels();refreshPhraseExpiry()}).catch(()=>{});
+fetch('/api/voice-priority').then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.levels)&&j.levels.length)TB=j;if(j&&typeof j.donTortuEnabled==='boolean')window.setDonTortuEnabled(j.donTortuEnabled);ensureLevels();refreshPhraseExpiry()}).catch(()=>{});
 function ensureLevels(){DEF_LEVELS.forEach(d=>{if(!TB.levels.some(l=>l.id===d.id))TB.levels.push(d)})}
 ensureLevels();
 const LV=id=>TB.levels.find(l=>l.id===id)||{};
@@ -5300,8 +5319,9 @@ function refreshPhraseExpiry(){const cooldown=phraseCooldownMs();phraseDictionar
 function phraseSnapshot(){const now=Date.now();purgePhraseDictionary(now);return Array.from(phraseDictionary.values(),phrase=>({text:phrase.text,remainingSeconds:Math.ceil((phrase.expiresAt-now)/1000)}))}
 setInterval(()=>purgePhraseDictionary(),1000);
 window.addEventListener('voice-config-update',event=>{
- const minutes=Number(event.detail&&event.detail.repeatCooldownMinutes);
+ const config=event.detail||{},minutes=Number(config.repeatCooldownMinutes);
  if(Number.isInteger(minutes)&&minutes>=1&&minutes<=1440){TB={...TB,repeatCooldownMinutes:minutes};refreshPhraseExpiry()}
+ if(typeof config.donTortuEnabled==='boolean')window.setDonTortuEnabled(config.donTortuEnabled);
 });
 window.getVoiceMonitorState=()=>({enabled:!mute(),trackMeters:TRACK(),phraseCooldownMs:phraseCooldownMs(),recentPhrases:phraseSnapshot(),current:cur?cur.text:'',queue:Q.map(item=>({id:item.id,priority:item.p,text:item.text})),levels:TB.levels.map(level=>({id:level.id,priority:level.priority,interrupt:!!level.interrupt}))});
 const mute=()=>safe(()=>P.vo)===0||safe(()=>P.vo)===false;
