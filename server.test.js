@@ -1324,6 +1324,8 @@ test('honor panel displays a pulsing rose', () => {
   const html = readFileSync(new URL('./overlay.html', import.meta.url), 'utf8');
   assert.match(html, /const rose=\{key:'rose'/);
   assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*animation:honorRoseBeat/);
+  assert.match(html, /#honor \.hn-aura \.hn-gicon\{[^}]*width:54px;height:54px/);
+  assert.match(html, /#honor \.hn-avatar\{width:56px;height:56px/);
   assert.match(html, /@keyframes honorRoseBeat/);
   assert.match(html, /@media \(prefers-reduced-motion:reduce\)\{#honor,#honor \*\{animation:none!important\}\}/);
 });
